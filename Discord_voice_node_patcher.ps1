@@ -15,11 +15,9 @@ $ProgressPreference = 'SilentlyContinue'
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing -ErrorAction SilentlyContinue
 
 $Script:UPDATE_URL = "https://raw.githubusercontent.com/ProdHallow/Discord-Node-Patcher-Feb-9-2026/main/Discord_voice_node_patcher.ps1"
-$Script:SCRIPT_VERSION = "4.0"
+$Script:SCRIPT_VERSION = "5.0"
 
-# ============================================================
-# 1. Auto-Elevation
-# ============================================================
+# region Auto-Elevation
 
 $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -41,13 +39,13 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
     }
 }
 
-# ============================================================
-# 2. Configuration
-# ============================================================
+# endregion Auto-Elevation
+
+# region Configuration
 
 $Script:GainExplicitlySet = $PSBoundParameters.ContainsKey('AudioGainMultiplier')
 $Script:Config = @{
-    SampleRate = 48000; Bitrate = 382; Channels = "Stereo"
+    SampleRate = 48000; Bitrate = 512; Channels = "Stereo"
     AudioGainMultiplier = $AudioGainMultiplier; SkipBackup = $SkipBackup.IsPresent; AutoRelaunch = $true
     ModuleName = "discord_voice.node"
     TempDir = "$env:TEMP\DiscordVoicePatcher"; BackupDir = "$env:TEMP\DiscordVoicePatcher\Backups"
@@ -60,6 +58,8 @@ $Script:Config = @{
         EmulateBitrateModified = 0x53886A; SetsBitrateBitrateValue = 0x53A691; SetsBitrateBitwiseOr = 0x53A699
         Emulate48Khz = 0x538573; HighPassFilter = 0x544680; HighpassCutoffFilter = 0x8BD4C0
         DcReject = 0x8BD6A0; DownmixFunc = 0x8B9830; AudioEncoderOpusConfigIsOk = 0x3A7610; ThrowError = 0x2C0040
+        DuplicateEmulateBitrateModified = 0x53D750
+        EncoderConfigInit1 = 0x3A737E; EncoderConfigInit2 = 0x3A6C87
     }
 }
 $Script:DoFixAll = $false
@@ -76,9 +76,9 @@ $Script:DiscordClients = [ordered]@{
     8 = @{Name="BetterVencord            [Mod]";      Path="$env:LOCALAPPDATA\BetterVencord";      FallbackPath="$env:LOCALAPPDATA\Discord"; Processes=@("BetterVencord","Discord","Update"); Exe="Discord.exe"; Shortcut="BetterVencord"; DetectPath="$env:APPDATA\BetterVencord"}
 }
 
-# ============================================================
-# 3. Logging
-# ============================================================
+# endregion Configuration
+
+# region Logging
 
 function Write-Log {
     param([Parameter(Mandatory)][AllowEmptyString()][AllowNull()][string]$Message, [ValidateSet('Info','Success','Warning','Error')][string]$Level = 'Info')
@@ -92,7 +92,7 @@ function Write-Log {
 
 function Write-Banner {
     Write-Host "`n===== Discord Voice Quality Patcher v$Script:SCRIPT_VERSION =====" -ForegroundColor Cyan
-    Write-Host "      48kHz | 382kbps | Stereo | Gain Config" -ForegroundColor Cyan
+    Write-Host "      48kHz | 512kbps | Stereo | Gain Config" -ForegroundColor Cyan
     Write-Host "         Multi-Client Detection Enabled" -ForegroundColor Cyan
     Write-Host "===============================================`n" -ForegroundColor Cyan
 }
@@ -104,9 +104,9 @@ function Show-Settings {
     Write-Host ""
 }
 
-# ============================================================
-# 4. User Config Persistence
-# ============================================================
+# endregion Logging
+
+# region User Config Persistence
 
 function Save-UserConfig {
     try {
@@ -136,9 +136,9 @@ function Get-UserConfig {
 
 function EnsureDir($p) { if ($p -and -not (Test-Path $p)) { try { [void](New-Item $p -ItemType Directory -Force) } catch { } } }
 
-# ============================================================
-# 5. Auto-Update
-# ============================================================
+# endregion User Config Persistence
+
+# region Auto-Update
 
 function Check-ForUpdate {
     try {
@@ -201,9 +201,9 @@ function Apply-ScriptUpdate {
     return $true
 }
 
-# ============================================================
-# 6. Voice Backup Download
-# ============================================================
+# endregion Auto-Update
+
+# region Voice Backup Download
 
 function Download-VoiceBackupFiles {
     param([string]$DestinationPath)
@@ -255,9 +255,9 @@ function Download-VoiceBackupFiles {
     }
 }
 
-# ============================================================
-# 7. Multi-Client Detection
-# ============================================================
+# endregion Voice Backup Download
+
+# region Multi-Client Detection
 
 function Get-PathFromProcess {
     param([string]$ProcessName)
@@ -372,9 +372,9 @@ function Get-InstalledClients {
     return $inst
 }
 
-# ============================================================
-# 8. Process Management
-# ============================================================
+# endregion Multi-Client Detection
+
+# region Process Management
 
 function Stop-DiscordProcesses {
     param([string[]]$ProcessNames)
@@ -396,9 +396,9 @@ function Stop-AllDiscordProcesses {
     return Stop-DiscordProcesses $allProcs
 }
 
-# ============================================================
-# 9. Backup Management
-# ============================================================
+# endregion Process Management
+
+# region Backup Management
 
 function Get-BackupList {
     if (-not (Test-Path $Script:Config.BackupDir)) { return @() }
@@ -482,9 +482,9 @@ function Backup-VoiceNode {
     } catch { Write-Log "Backup failed: $_" -Level Error; return $false }
 }
 
-# ============================================================
-# 10. GUI
-# ============================================================
+# endregion Backup Management
+
+# region GUI
 
 function Show-ConfigurationGUI {
     Add-Type -AssemblyName System.Windows.Forms, System.Drawing
@@ -511,7 +511,7 @@ function Show-ConfigurationGUI {
 
     & $newLabel 20 20 400 30 "Discord Voice Quality Patcher" (New-Object Drawing.Font("Segoe UI", 16, [Drawing.FontStyle]::Bold)) ([Drawing.Color]::FromArgb(88,101,242))
     & $newLabel 420 28 80 20 "v$Script:SCRIPT_VERSION" (New-Object Drawing.Font("Segoe UI", 9)) ([Drawing.Color]::FromArgb(150,152,157))
-    & $newLabel 20 55 480 20 "48kHz | 382kbps | Stereo | Multi-Client Support" (New-Object Drawing.Font("Segoe UI", 9)) ([Drawing.Color]::FromArgb(185,187,190))
+    & $newLabel 20 55 480 20 "48kHz | 512kbps | Stereo | Multi-Client Support" (New-Object Drawing.Font("Segoe UI", 9)) ([Drawing.Color]::FromArgb(185,187,190))
     & $newLabel 20 85 480 25 "Discord Client" (New-Object Drawing.Font("Segoe UI", 11, [Drawing.FontStyle]::Bold)) $null
 
     $clientCombo = New-Object Windows.Forms.ComboBox -Property @{
@@ -615,9 +615,9 @@ function Show-ConfigurationGUI {
     try { $null = $form.ShowDialog(); return $form.Tag } finally { $form.Dispose() }
 }
 
-# ============================================================
-# 11. Environment & Compiler
-# ============================================================
+# endregion GUI
+
+# region Environment & Compiler
 
 function Initialize-Environment {
     @($Script:Config.TempDir, $Script:Config.BackupDir) | ForEach-Object {
@@ -664,9 +664,9 @@ function Cleanup-TempFiles {
     Get-ChildItem $tempDir -Filter "DiscordVoicePatcher_*.exe" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 }
 
-# ============================================================
-# 12. Source Code Generation
-# ============================================================
+# endregion Environment & Compiler
+
+# region Source Code Generation
 
 function Get-AmplifierSourceCode {
     $multiplier = $Script:Config.AudioGainMultiplier - 2
@@ -740,6 +740,9 @@ namespace Offsets {
     constexpr uint32_t DownmixFunc = $('0x{0:X}' -f $offsets.DownmixFunc);
     constexpr uint32_t AudioEncoderOpusConfigIsOk = $('0x{0:X}' -f $offsets.AudioEncoderOpusConfigIsOk);
     constexpr uint32_t ThrowError = $('0x{0:X}' -f $offsets.ThrowError);
+    constexpr uint32_t DuplicateEmulateBitrateModified = $('0x{0:X}' -f $offsets.DuplicateEmulateBitrateModified);
+    constexpr uint32_t EncoderConfigInit1 = $('0x{0:X}' -f $offsets.EncoderConfigInit1);
+    constexpr uint32_t EncoderConfigInit2 = $('0x{0:X}' -f $offsets.EncoderConfigInit2);
     constexpr uint32_t FILE_OFFSET_ADJUSTMENT = 0xC00;
 };
 
@@ -853,22 +856,24 @@ private:
             return true;
         };
 
-        printf("  [1/4] Enabling stereo audio...\n");
+        printf("  [1/5] Enabling stereo audio...\n");
         if (!PatchBytes(Offsets::EmulateStereoSuccess1, "\x02", 1)) return false;
         if (!PatchBytes(Offsets::EmulateStereoSuccess2, "\xEB", 1)) return false;
         if (!PatchBytes(Offsets::CreateAudioFrameStereo, "\x49\x89\xC5\x90", 4)) return false;
         if (!PatchBytes(Offsets::AudioEncoderOpusConfigSetChannels, "\x02", 1)) return false;
         if (!PatchBytes(Offsets::MonoDownmixer, "\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\xE9", 13)) return false;
-        printf("  [2/4] Setting bitrate to 382kbps...\n");
-        if (!PatchBytes(Offsets::EmulateBitrateModified, "\xF0\xD4\x05", 3)) return false;
-        if (!PatchBytes(Offsets::SetsBitrateBitrateValue, "\xF0\xD4\x05\x00\x00", 5)) return false;
+        printf("  [2/5] Setting bitrate to 512kbps...\n");
+        if (!PatchBytes(Offsets::EmulateBitrateModified, "\x00\xD0\x07", 3)) return false;
+        if (!PatchBytes(Offsets::SetsBitrateBitrateValue, "\x00\xD0\x07\x00\x00", 5)) return false;
         if (!PatchBytes(Offsets::SetsBitrateBitwiseOr, "\x90\x90\x90", 3)) return false;
-        printf("  [3/4] Enabling 48kHz sample rate...\n");
+        // Patch duplicate bitrate calculation path (parallel function the original patcher missed)
+        if (!PatchBytes(Offsets::DuplicateEmulateBitrateModified, "\x00\xD0\x07", 3)) return false;
+        printf("  [3/5] Enabling 48kHz sample rate...\n");
         if (!PatchBytes(Offsets::Emulate48Khz, "\x90\x90\x90", 3)) return false;
         if (AUDIO_GAIN == 1) {
-            printf("  [4/4] Injecting audio processing (no amplification)...\n");
+            printf("  [4/5] Injecting audio processing (no amplification)...\n");
         } else {
-            printf("  [4/4] Injecting audio processing (%dx gain)...\n", AUDIO_GAIN);
+            printf("  [4/5] Injecting audio processing (%dx gain)...\n", AUDIO_GAIN);
         }
         // Build HighPassFilter stub: mov rax, <HighpassCutoffFilter VA>; ret
         // The stub replaces the filter function with an immediate return.
@@ -889,6 +894,12 @@ private:
         if (!PatchBytes(Offsets::DownmixFunc, "\xC3", 1)) return false;
         if (!PatchBytes(Offsets::AudioEncoderOpusConfigIsOk, "\x48\xC7\xC0\x01\x00\x00\x00\xC3", 8)) return false;
         if (!PatchBytes(Offsets::ThrowError, "\xC3", 1)) return false;
+        printf("  [5/5] Patching encoder config init (512kbps at creation)...\n");
+        // Patch both Opus encoder config constructors to initialize with 512kbps
+        // instead of default 32kbps - prevents bitrate reset between encoder creation
+        // and first SetBitrate call. Patches the packed qword high dword from 0x7D00 to 0x7D000.
+        if (!PatchBytes(Offsets::EncoderConfigInit1, "\x00\xD0\x07\x00", 4)) return false;
+        if (!PatchBytes(Offsets::EncoderConfigInit2, "\x00\xD0\x07\x00", 4)) return false;
         printf("  All patches applied successfully!\n");
         return true;
     }
@@ -1042,9 +1053,9 @@ function New-SourceFiles {
     } catch { Write-Log "Failed to create source files: $_" -Level Error; return $null }
 }
 
-# ============================================================
-# 13. Compilation
-# ============================================================
+# endregion Source Code Generation
+
+# region Compilation
 
 function Invoke-Compilation {
     param([hashtable]$Compiler, [string[]]$SourceFiles)
@@ -1100,9 +1111,9 @@ function Invoke-Compilation {
     }
 }
 
-# ============================================================
-# 14. Core Patching
-# ============================================================
+# endregion Compilation
+
+# region Core Patching
 
 function Invoke-PatchClients {
     param([array]$Clients, [hashtable]$Compiler, [string]$VoiceBackupPath)
@@ -1164,9 +1175,9 @@ function Invoke-PatchClients {
     return @{ Success = $successCount; Failed = @($failedClients); Total = $Clients.Count }
 }
 
-# ============================================================
-# 15. Main Entry
-# ============================================================
+# endregion Core Patching
+
+# region Main Entry
 
 function Start-Patching {
     Write-Banner
@@ -1303,9 +1314,9 @@ function Start-Patching {
     return ($result.Success -gt 0)
 }
 
-# ============================================================
-# 16. Run
-# ============================================================
+# endregion Main Entry
+
+# region Run
 
 try {
     $success = Start-Patching
@@ -1316,3 +1327,5 @@ try {
     Write-Host $_.ScriptStackTrace -ForegroundColor Red
     Read-Host "Press Enter to exit"; exit 1
 }
+
+# endregion Run
