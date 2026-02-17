@@ -601,7 +601,7 @@ VoiceEngine.setTransportOptions = function(options) {
   return originalSetTransportOptions.call(this, options);
 };
 
-console.log('[PATCH] Audio: Echo cancellation, noise suppression, and AGC disabled. Bitrate set to 512kbps.');
+console.log('[PATCH] Audio: Echo cancellation, noise suppression, and AGC disabled. Bitrate set to 400kbps.');
 console.log('[PATCH] Video: 1920x1080 @ 60fps, 10Mbps bitrate, H264 High Profile.');
 
 module.exports = VoiceEngine;
