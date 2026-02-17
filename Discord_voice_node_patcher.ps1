@@ -45,7 +45,7 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
 
 $Script:GainExplicitlySet = $PSBoundParameters.ContainsKey('AudioGainMultiplier')
 $Script:Config = @{
-    SampleRate = 48000; Bitrate = 512; Channels = "Stereo"
+    SampleRate = 48000; Bitrate = 400; Channels = "Stereo"
     AudioGainMultiplier = $AudioGainMultiplier; SkipBackup = $SkipBackup.IsPresent; AutoRelaunch = $true
     ModuleName = "discord_voice.node"
     TempDir = "$env:TEMP\DiscordVoicePatcher"; BackupDir = "$env:TEMP\DiscordVoicePatcher\Backups"
@@ -105,7 +105,7 @@ function Write-Log {
 
 function Write-Banner {
     Write-Host "`n===== Discord Voice Quality Patcher v$Script:SCRIPT_VERSION =====" -ForegroundColor Cyan
-    Write-Host "      48kHz | 512kbps | Stereo | Gain Config" -ForegroundColor Cyan
+    Write-Host "      48kHz | 400kbps | Stereo | Gain Config" -ForegroundColor Cyan
     Write-Host "         Multi-Client Detection Enabled" -ForegroundColor Cyan
     Write-Host "===============================================`n" -ForegroundColor Cyan
 }
@@ -524,7 +524,7 @@ function Show-ConfigurationGUI {
 
     & $newLabel 20 20 400 30 "Discord Voice Quality Patcher" (New-Object Drawing.Font("Segoe UI", 16, [Drawing.FontStyle]::Bold)) ([Drawing.Color]::FromArgb(88,101,242))
     & $newLabel 420 28 80 20 "v$Script:SCRIPT_VERSION" (New-Object Drawing.Font("Segoe UI", 9)) ([Drawing.Color]::FromArgb(150,152,157))
-    & $newLabel 20 55 480 20 "48kHz | 512kbps | Stereo | Multi-Client Support" (New-Object Drawing.Font("Segoe UI", 9)) ([Drawing.Color]::FromArgb(185,187,190))
+    & $newLabel 20 55 480 20 "48kHz | 400kbps | Stereo | Multi-Client Support" (New-Object Drawing.Font("Segoe UI", 9)) ([Drawing.Color]::FromArgb(185,187,190))
     & $newLabel 20 85 480 25 "Discord Client" (New-Object Drawing.Font("Segoe UI", 11, [Drawing.FontStyle]::Bold)) $null
 
     $clientCombo = New-Object Windows.Forms.ComboBox -Property @{
@@ -875,12 +875,12 @@ private:
         if (!PatchBytes(Offsets::CreateAudioFrameStereo, "\x49\x89\xC5\x90", 4)) return false;
         if (!PatchBytes(Offsets::AudioEncoderOpusConfigSetChannels, "\x02", 1)) return false;
         if (!PatchBytes(Offsets::MonoDownmixer, "\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\xE9", 13)) return false;
-        printf("  [2/5] Setting bitrate to 512kbps...\n");
-        if (!PatchBytes(Offsets::EmulateBitrateModified, "\x00\xD0\x07", 3)) return false;
-        if (!PatchBytes(Offsets::SetsBitrateBitrateValue, "\x00\xD0\x07\x00\x00", 5)) return false;
+        printf("  [2/5] Setting bitrate to 400kbps...\n");
+        if (!PatchBytes(Offsets::EmulateBitrateModified, "\x80\x1A\x06", 3)) return false;
+        if (!PatchBytes(Offsets::SetsBitrateBitrateValue, "\x80\x1A\x06\x00\x00", 5)) return false;
         if (!PatchBytes(Offsets::SetsBitrateBitwiseOr, "\x90\x90\x90", 3)) return false;
         // Patch duplicate bitrate calculation path (parallel function the original patcher missed)
-        if (!PatchBytes(Offsets::DuplicateEmulateBitrateModified, "\x00\xD0\x07", 3)) return false;
+        if (!PatchBytes(Offsets::DuplicateEmulateBitrateModified, "\x80\x1A\x06", 3)) return false;
         printf("  [3/5] Enabling 48kHz sample rate...\n");
         if (!PatchBytes(Offsets::Emulate48Khz, "\x90\x90\x90", 3)) return false;
         if (AUDIO_GAIN == 1) {
@@ -907,12 +907,12 @@ private:
         if (!PatchBytes(Offsets::DownmixFunc, "\xC3", 1)) return false;
         if (!PatchBytes(Offsets::AudioEncoderOpusConfigIsOk, "\x48\xC7\xC0\x01\x00\x00\x00\xC3", 8)) return false;
         if (!PatchBytes(Offsets::ThrowError, "\xC3", 1)) return false;
-        printf("  [5/5] Patching encoder config init (512kbps at creation)...\n");
-        // Patch both Opus encoder config constructors to initialize with 512kbps
+        printf("  [5/5] Patching encoder config init (400kbps at creation)...\n");
+        // Patch both Opus encoder config constructors to initialize with 400kbps
         // instead of default 32kbps - prevents bitrate reset between encoder creation
-        // and first SetBitrate call. Patches the packed qword high dword from 0x7D00 to 0x7D000.
-        if (!PatchBytes(Offsets::EncoderConfigInit1, "\x00\xD0\x07\x00", 4)) return false;
-        if (!PatchBytes(Offsets::EncoderConfigInit2, "\x00\xD0\x07\x00", 4)) return false;
+        // and first SetBitrate call. 400000 = 0x61A80.
+        if (!PatchBytes(Offsets::EncoderConfigInit1, "\x80\x1A\x06\x00", 4)) return false;
+        if (!PatchBytes(Offsets::EncoderConfigInit2, "\x80\x1A\x06\x00", 4)) return false;
         printf("  All patches applied successfully!\n");
         return true;
     }
