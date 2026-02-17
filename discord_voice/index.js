@@ -563,7 +563,7 @@ VoiceEngine.setTransportOptions = function(options) {
   
   // Audio bitrate
   if (options.encodingVoiceBitrate) {
-    options.encodingVoiceBitrate = 512000;
+    options.encodingVoiceBitrate = 400000;
   }
   
   // Video encoder settings
