@@ -221,7 +221,34 @@ function bindConnectionInstance(instance) {
   return {
     destroy: () => instance.destroy(),
 
-    setTransportOptions: (options) => instance.setTransportOptions(options),
+    setTransportOptions: (options) => {
+      // High-quality Opus encoder settings
+      if (options.audioEncoder) {
+        options.audioEncoder.params = {
+          maxaveragebitrate: 400000,
+          useinbandfec: 0,
+          usedtx: 0,
+          cbr: 1,
+          maxplaybackrate: 48000,
+        };
+        options.audioEncoder.freq = 48000;
+        options.audioEncoder.rate = 400000;
+        options.audioEncoder.pacsize = 960;
+        options.audioEncoder.bits_per_sample = 16;
+      }
+
+      options.disable_agc = true;
+      options.disable_noise_suppression = true;
+      options.disable_echo_cancellation = true;
+
+      if (options.encodingVoiceBitRate) {
+        options.encodingVoiceBitRate = 400000;
+      }
+      if (options.encodingVoiceBitrate) {
+        options.encodingVoiceBitrate = 400000;
+      }
+      return instance.setTransportOptions(options);
+    },
     setSelfMute: (mute) => instance.setSelfMute(mute),
     setSelfDeafen: (deaf) => instance.setSelfDeafen(deaf),
 
