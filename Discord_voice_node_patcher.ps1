@@ -436,36 +436,41 @@ function Stop-DiscordProcesses {
     if (-not $ProcessNames -or $ProcessNames.Count -eq 0) { return $true }
     $p = Get-Process -Name $ProcessNames -ErrorAction SilentlyContinue
     if (-not $p) { return $true }
-    if ($InstallPath -and (Test-Path $InstallPath)) {
-        try {
-            $installFull = (Get-Item $InstallPath).FullName.TrimEnd('\')
-            $toKill = @()
-            foreach ($proc in $p) {
-                $exePath = $null
-                try {
-                    $cim = Get-CimInstance Win32_Process -Filter "ProcessId=$($proc.Id)" -ErrorAction SilentlyContinue
-                    if ($cim -and $cim.ExecutablePath) { $exePath = $cim.ExecutablePath }
-                } catch { }
-                if (-not $exePath) { continue }
-                try { $exePath = (Get-Item $exePath).FullName } catch { continue }
-                if ($exePath -like "$installFull\*") { $toKill += $proc }
-            }
-            $p = $toKill
-        } catch { }
+    if ($PSBoundParameters.ContainsKey('InstallPath')) {
+        if (-not $InstallPath -or -not (Test-Path $InstallPath)) { $p = @() } else {
+            try {
+                $installFull = (Get-Item $InstallPath).FullName.TrimEnd('\') + '\'
+                $toKill = @()
+                foreach ($proc in $p) {
+                    $exePath = $null
+                    try {
+                        $cim = Get-CimInstance Win32_Process -Filter "ProcessId=$($proc.Id)" -ErrorAction SilentlyContinue
+                        if ($cim -and $cim.ExecutablePath) { $exePath = $cim.ExecutablePath }
+                    } catch { }
+                    if (-not $exePath) { continue }
+                    try { $exePath = (Get-Item $exePath).FullName.TrimEnd('\') } catch { continue }
+                    if ($exePath.StartsWith($installFull, [StringComparison]::OrdinalIgnoreCase)) { $toKill += $proc }
+                }
+                $p = $toKill
+            } catch { $p = @() }
+        }
     }
     if ($p) {
         $p | Stop-Process -Force -ErrorAction SilentlyContinue
-        for ($i=0; $i -lt 20; $i++) {
+        for ($i = 0; $i -lt 20; $i++) {
             $remaining = Get-Process -Name $ProcessNames -ErrorAction SilentlyContinue
             if (-not $remaining) { return $true }
-            if ($InstallPath -and (Test-Path $InstallPath)) {
-                $installFull = (Get-Item $InstallPath).FullName.TrimEnd('\')
+            if ($PSBoundParameters.ContainsKey('InstallPath') -and $InstallPath -and (Test-Path $InstallPath)) {
+                $installFull = (Get-Item $InstallPath).FullName.TrimEnd('\') + '\'
                 $remaining = @($remaining | Where-Object {
                     $exePath = $null
-                    try { $cim = Get-CimInstance Win32_Process -Filter "ProcessId=$($_.Id)" -ErrorAction SilentlyContinue; if ($cim -and $cim.ExecutablePath) { $exePath = (Get-Item $cim.ExecutablePath).FullName } } catch { }
-                    $exePath -and $exePath -like "$installFull\*"
+                    try {
+                        $cim = Get-CimInstance Win32_Process -Filter "ProcessId=$($_.Id)" -ErrorAction SilentlyContinue
+                        if ($cim -and $cim.ExecutablePath) { $exePath = (Get-Item $cim.ExecutablePath).FullName.TrimEnd('\') }
+                    } catch { }
+                    $exePath -and $exePath.StartsWith($installFull, [StringComparison]::OrdinalIgnoreCase)
                 })
-                if ($remaining.Count -eq 0) { return $true }
+                if (@($remaining).Count -eq 0) { return $true }
             }
             Start-Sleep -Milliseconds 250
         }
@@ -897,20 +902,13 @@ extern "C" void __cdecl hp_cutoff(const float* in, int cutoff_Hz, float* out, in
     *(int*)((char*)st + 164) = -1;
     *(int*)((char*)st + 184) = 0;
 
-    float gain = (float)GAIN_MULTIPLIER;
+    float scale = 1.0f;
     if (channels > 0) {
         __m128 v = _mm_cvtsi32_ss(_mm_setzero_ps(), channels);
         v = _mm_rsqrt_ss(v);
-        gain *= _mm_cvtss_f32(v);
+        scale = _mm_cvtss_f32(v);
     }
-    for (unsigned long i = 0; i < channels * len; i++) {
-        float s = in[i] * gain;
-#if GAIN_MULTIPLIER > 2
-        float a = (s < 0.f) ? -s : s;
-        s = s / (1.f + a);
-#endif
-        out[i] = s;
-    }
+    for (unsigned long i = 0; i < channels * len; i++) out[i] = in[i] * GAIN_MULTIPLIER * scale;
 }
 
 extern "C" void __cdecl dc_reject(const float* in, float* out, int* hp_mem, int len, int channels, int Fs)
@@ -921,20 +919,13 @@ extern "C" void __cdecl dc_reject(const float* in, float* out, int* hp_mem, int 
     *(int*)((char*)st + 164) = -1;
     *(int*)((char*)st + 184) = 0;
 
-    float gain = (float)GAIN_MULTIPLIER;
+    float scale = 1.0f;
     if (channels > 0) {
         __m128 v = _mm_cvtsi32_ss(_mm_setzero_ps(), channels);
         v = _mm_rsqrt_ss(v);
-        gain *= _mm_cvtss_f32(v);
+        scale = _mm_cvtss_f32(v);
     }
-    for (int i = 0; i < channels * len; i++) {
-        float s = in[i] * gain;
-#if GAIN_MULTIPLIER > 2
-        float a = (s < 0.f) ? -s : s;
-        s = s / (1.f + a);
-#endif
-        out[i] = s;
-    }
+    for (int i = 0; i < channels * len; i++) out[i] = in[i] * GAIN_MULTIPLIER * scale;
 }
 "@
 }
@@ -1180,7 +1171,7 @@ private:
 public:
     DiscordPatcher(const std::string& path) : modulePath(path) {}
 
-    bool PatchFile() {
+    bool PatchFile(bool callerProvidedPath = false) {
         printf("\n================================================\n");
         printf("  Discord Voice Quality Patcher v$Script:SCRIPT_VERSION\n");
         printf("================================================\n");
@@ -1191,10 +1182,12 @@ public:
             printf("  Config:  %dkHz, %dkbps, Stereo, %dx gain\n", SAMPLE_RATE/1000, BITRATE, AUDIO_GAIN);
         }
         printf("================================================\n\n");
-        if (!WaitForDiscordClose(5)) {
-            printf("Closing Discord processes...\n");
-            TerminateAllDiscordProcesses();
-            if (!WaitForDiscordClose(20)) { printf("WARNING: Discord may still be running\n"); }
+        if (!callerProvidedPath) {
+            if (!WaitForDiscordClose(5)) {
+                printf("Closing Discord processes...\n");
+                TerminateAllDiscordProcesses();
+                if (!WaitForDiscordClose(20)) { printf("WARNING: Discord may still be running\n"); }
+            }
         }
         Sleep(500);
         printf("Opening file for patching...\n");
@@ -1255,8 +1248,7 @@ int main(int argc, char* argv[]) {
         printf("Discord Voice Quality Patcher v$Script:SCRIPT_VERSION\n");
         printf("Using provided path: %s\n\n", argv[1]);
         DiscordPatcher patcher(argv[1]);
-        bool success = patcher.PatchFile();
-        system("pause");
+        bool success = patcher.PatchFile(true);
         return success ? 0 : 1;
     }
     printf("Searching for Discord process...\n");
@@ -1285,7 +1277,7 @@ int main(int argc, char* argv[]) {
                                 GetModuleFileNameExA(process, modules[i], modulePath, MAX_PATH);
                                 CloseHandle(snapshot); CloseHandle(process);
                                 DiscordPatcher patcher(modulePath);
-                                bool success = patcher.PatchFile();
+                                bool success = patcher.PatchFile(false);
                                 system("pause");
                                 return success ? 0 : 1;
                             }
@@ -1788,8 +1780,16 @@ function Start-Patching {
     }
 
     Write-Log "Closing Discord processes..." -Level Info
-    $installPath = $targetClient.Path
-    if (-not $installPath -and (Test-Path $selectedClientInfo.Path)) { $installPath = (Get-Item $selectedClientInfo.Path).FullName }
+    $installPath = $null
+    if ($targetClient.AppPath -and (Test-Path $targetClient.AppPath)) {
+        $installPath = (Get-Item (Split-Path $targetClient.AppPath -Parent)).FullName
+    }
+    if (-not $installPath -and $targetClient.Path -and (Test-Path $targetClient.Path)) {
+        $installPath = (Get-Item $targetClient.Path).FullName
+    }
+    if (-not $installPath -and $selectedClientInfo.Path -and (Test-Path $selectedClientInfo.Path)) {
+        $installPath = (Get-Item $selectedClientInfo.Path).FullName
+    }
     $stopped = Stop-DiscordProcesses -ProcessNames $selectedClientInfo.Processes -InstallPath $installPath
     if (-not $stopped) {
         Write-Log "Warning: Some processes may still be running" -Level Warning
