@@ -41,6 +41,16 @@ Important:
 - If you use Visual Studio, install the "Desktop development with C++" workload.
 - Ensure MSVC build tools and Windows SDK are installed.
 
+Recommended (Windows):
+
+If you want the simplest setup, install Visual Studio 2022 (Community is fine) and select:
+- Workload: "Desktop development with C++"
+- Components: "MSVC v143" (x64/x86) and "Windows 10/11 SDK"
+
+Common confusion:
+- VS Code = editor (no compiler)
+- Visual Studio = IDE + MSVC compiler (with the C++ workload)
+
 ## Supported clients
 
 - Discord Stable
@@ -149,7 +159,10 @@ To restore:
 ## Troubleshooting
 
 - "No compiler found"
-  - Install Visual Studio with C++ workload.
+  - Install Visual Studio with the C++ workload ("Desktop development with C++").
+- "I have VS Code but it still says no compiler / compile failed"
+  - That is expected: VS Code does not include MSVC build tools.
+  - Install Visual Studio (or Visual Studio Build Tools) with the C++ workload and Windows SDK.
 - "Binary validation failed"
   - Your `discord_voice.node` does not match the expected Feb 2026 build.
 - "Access denied" or cannot open file
