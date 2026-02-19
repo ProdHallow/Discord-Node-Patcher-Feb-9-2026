@@ -1,173 +1,275 @@
-# Discord Voice Node Patcher
+# 🎙️ Discord Voice Node Patcher
 
-Discord voice quality patcher for the Feb 9, 2026 `discord_voice.node` build.
+**Studio-grade audio for Discord: 48kHz • 400kbps • True Stereo**
 
-Default patch profile:
-- 48 kHz sample rate
-- 400 kbps bitrate
-- Stereo output
-- Optional gain multiplier (1x to 10x)
+![Version](https://img.shields.io/badge/Version-5.0-5865F2?style=flat-square)
+![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?style=flat-square)
+![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-5391FE?style=flat-square)
 
-Repository:
-- https://github.com/ProdHallow/Discord-Node-Patcher-Feb-9-2026
+---
 
-## Quick start
+## ⬇️ Download & Run
 
-### Option 1: BAT launcher (recommended)
+### Option 1: One-Click BAT (Recommended)
 
-Download the latest release and run the BAT file:
-- https://github.com/ProdHallow/Discord-Node-Patcher-Feb-9-2026/releases/latest
+[**📥 Download DiscordVoicePatcher.bat**](https://github.com/ProdHallow/Discord-Node-Patcher-Feb-9-2026/releases/latest)
 
-The launcher downloads the latest PowerShell script and executes it.
+Just download and double-click. Always runs the latest version.
 
-### Option 2: PowerShell one-liner
+---
+
+### Option 2: One-Liner (No Download)
 
 ```powershell
 irm https://raw.githubusercontent.com/ProdHallow/Discord-Node-Patcher-Feb-9-2026/main/Discord_voice_node_patcher.ps1 -OutFile "$env:TEMP\dvp.ps1"; & "$env:TEMP\dvp.ps1"
 ```
 
-## Requirements
+Paste into PowerShell and press Enter.
 
-Install one C++ compiler:
+---
 
-- Visual Studio (recommended): install "Desktop development with C++"
-- MinGW-w64
-- LLVM/Clang
+## ⚠️ Requirement
 
-The patcher compiles a native helper executable at runtime.
+**You need a C++ compiler.** Install one of these first:
 
-## Supported clients
+| Compiler | Download |
+|----------|----------|
+| **Visual Studio** (Recommended) | [Download](https://visualstudio.microsoft.com/downloads/) — Select "Desktop development with C++" |
+| MinGW-w64 | [Download](https://www.mingw-w64.org/downloads/) |
+| LLVM/Clang | [Download](https://releases.llvm.org/download.html) |
 
-- Discord Stable
-- Discord Canary
-- Discord PTB
-- Discord Development
-- BetterDiscord
-- Vencord
-- Equicord
-- BetterVencord
-- Lightcord
+---
 
-## What this patcher changes
+## ✨ What It Does
 
-| Component | Before | After |
-| --- | --- | --- |
-| Sample rate | 24 kHz | 48 kHz |
-| Bitrate | ~64 kbps | 400 kbps |
-| Channels | Mono | Stereo |
-| Gain | Fixed | 1x to 10x |
+| Before | After |
+|:------:|:-----:|
+| 24 kHz | **48 kHz** |
+| ~64 kbps | **400 kbps** |
+| Mono | **True Stereo** |
+| Fixed gain | **1x-10x Adjustable** |
 
-## Usage
+Works with: **Discord Stable, Canary, PTB, Development, BetterDiscord, Vencord, Equicord, BetterVencord, Lightcord**
 
-### GUI mode
+---
+
+## 🆕 What's New in v5.0
+
+| Feature | Description |
+|---------|-------------|
+| **400kbps Bitrate** | Upgraded from 382kbps to 400kbps — matches the maximum Opus bitrate used by the reference encoder |
+| **Duplicate Bitrate Path Patched** | Discovered and patched a parallel bitrate calculation function (`0x53D750`) that the original patcher missed — eliminates a leak path where the old 32kbps value could persist |
+| **Encoder Config Hot-Start** | Two Opus encoder config constructors (`0x3A737E`, `0x3A6C87`) now initialize at 400kbps instead of 32kbps — closes the window between encoder creation and the first `SetBitrate` call |
+| **18 Total Offsets** | Up from 15 — patcher updated for full coverage |
+
+---
+
+<details>
+<summary><h2>📖 Full Documentation</h2></summary>
+
+### GUI Features
+
+- **Client Dropdown** — Auto-detects all installed Discord variants
+- **Gain Slider** — Adjust volume from 1x to 10x
+- **Auto-Relaunch** — Automatically restart Discord after patching (enabled by default)
+- **Patch All** — Fix every client with one click
+- **Backup/Restore** — Automatic backups before patching
+
+### Command Line
 
 ```powershell
-.\Discord_voice_node_patcher.ps1
+.\script.ps1                      # Open GUI
+.\script.ps1 -FixAll              # Patch all clients (no GUI)
+.\script.ps1 -FixClient "Canary"  # Patch specific client
+.\script.ps1 -Restore             # Restore from backup
+.\script.ps1 -ListBackups         # Show backups
+.\script.ps1 -AudioGainMultiplier 3  # Set gain level
+.\script.ps1 -SkipUpdateCheck     # Skip auto-update check
 ```
 
-### CLI mode
+### Gain Guide
 
-```powershell
-.\Discord_voice_node_patcher.ps1 -FixAll
-.\Discord_voice_node_patcher.ps1 -FixClient "Canary"
-.\Discord_voice_node_patcher.ps1 -AudioGainMultiplier 3
-.\Discord_voice_node_patcher.ps1 -Restore
-.\Discord_voice_node_patcher.ps1 -ListBackups
-.\Discord_voice_node_patcher.ps1 -SkipUpdateCheck
-```
+| Level | Use Case | Safety |
+|:-----:|----------|:------:|
+| 1-2x | Normal use | ✅ Safe |
+| 3-4x | Quiet sources | ⚠️ Caution |
+| 5-10x | Maximum boost | ❌ May distort |
 
-## How patching works
+### File Locations
 
-1. Detect installed Discord clients.
-2. Download known-compatible voice module backup files from GitHub.
-3. Stop Discord processes.
-4. Back up current `discord_voice.node` (unless skipped).
-5. Replace voice module files with the compatible backup set.
-6. Generate native C++ patcher sources from script config.
-7. Compile and execute the native patcher.
-8. Apply all binary patches with bounds checks.
-9. Verify bitrate patch bytes and integer values after patching.
-10. Optionally relaunch Discord.
+| Path | Purpose |
+|------|---------|
+| `%TEMP%\DiscordVoicePatcher\` | Logs, config, compiled patcher |
+| `%TEMP%\DiscordVoicePatcher\Backups\` | Auto-backups (max 10) |
 
-## 400 kbps technical notes
+</details>
 
-Bitrate target:
-- Decimal: `400000`
-- Hex: `0x61A80`
-- Little-endian bytes: `80 1A 06 00`
+<details>
+<summary><h2>🔧 Troubleshooting</h2></summary>
 
-Primary bitrate patch bytes:
-- 3-byte constant: `80 1A 06`
-- 4-byte constant: `80 1A 06 00`
-- 5-byte constant: `80 1A 06 00 00`
+| Problem | Solution |
+|---------|----------|
+| "No compiler found" | Install Visual Studio with C++ workload |
+| "Discord not found" | Make sure Discord is running |
+| "Access denied" | Script auto-elevates, just accept the prompt |
+| Audio distorted | Lower gain to 1-2x |
+| No effect after patch | Restart Discord completely |
+| "Binary validation failed" | Your discord_voice.node doesn't match the Feb 2026 build — wait for a patcher update or restore from backup |
 
-Bitrate-related offsets (Feb 9, 2026 build):
-
-```text
-0x53886A  EmulateBitrateModified           -> 80 1A 06
-0x53A691  SetsBitrateBitrateValue          -> 80 1A 06 00 00
-0x53A699  SetsBitrateBitwiseOr             -> 90 90 90
-0x53D750  DuplicateEmulateBitrateModified  -> 80 1A 06
-0x3A737E  EncoderConfigInit1               -> 80 1A 06 00
-0x3A6C87  EncoderConfigInit2               -> 80 1A 06 00
-```
-
-## Safety checks
-
-The patcher includes multiple safeguards:
-
-- File size gate (12 MB to 18 MB).
-- Pre-patch byte validation in multiple code sections.
-- Already-patched detection with safe re-patch behavior.
-- Per-write bounds checks before every patch write.
-- Post-patch bitrate byte verification at all bitrate sites.
-- Post-patch integer readback verification (`400000` expected).
-- Partial read/write detection during file IO.
-
-If validation fails, patching aborts without applying unsafe writes.
-
-## Logs, backups, and restore
-
-Paths:
-- Logs and temp artifacts: `%TEMP%\DiscordVoicePatcher\`
-- Backups: `%TEMP%\DiscordVoicePatcher\Backups\`
-
-To view logs:
-
+### View Logs
 ```powershell
 notepad "$env:TEMP\DiscordVoicePatcher\patcher.log"
 ```
 
-To restore:
-- Run the script and choose `Restore` in GUI, or use `-Restore`.
+### Restore Original
+```powershell
+irm https://raw.githubusercontent.com/ProdHallow/Discord-Node-Patcher-Feb-9-2026/main/Discord_voice_node_patcher.ps1 -OutFile "$env:TEMP\dvp.ps1"; & "$env:TEMP\dvp.ps1"
+# Then select "Restore" in the GUI
+```
 
-## Troubleshooting
+</details>
 
-- "No compiler found"
-  - Install Visual Studio with C++ workload.
-- "Binary validation failed"
-  - Your `discord_voice.node` does not match the expected Feb 2026 build.
-- "Access denied" or cannot open file
-  - Close Discord fully and run as Administrator.
-- "No effect after patch"
-  - Fully restart Discord.
-- Distorted audio
-  - Reduce gain to 1x or 2x.
+<details>
+<summary><h2>📋 Changelog</h2></summary>
 
-## Changelog summary
+### v5.0 (Current) — 400kbps + Full Bitrate Coverage
+- 🚀 **NEW:** Bitrate upgraded from 382kbps to 400kbps across all patch sites
+- 🚀 **NEW:** `DuplicateEmulateBitrateModified` (`0x53D750`) — patches the parallel bitrate calculation function that bypassed the original `SetBitrate` path, preventing 32kbps leakthrough
+- 🚀 **NEW:** `EncoderConfigInit1` (`0x3A737E`) and `EncoderConfigInit2` (`0x3A6C87`) — patches both Opus encoder config constructors to initialize at 400kbps instead of 32kbps default
+- 🔀 **CHANGED:** All bitrate bytes updated: `\xF0\xD4\x05` (382kbps) → `\x80\x1A\x06` (400kbps / 0x61A80)
+- 🧹 **CLEANUP:** Section comment blocks converted to `# region` / `# endregion` style
 
-### v5.0
+### v4.0 — February 2026 Build
+- 🚀 **NEW:** All 15 offsets updated for Feb 9, 2026 discord_voice.node build
+- 🚀 **NEW:** Pre-patch binary validation — checks original bytes at 3 sites across different PE sections before writing anything
+- 🚀 **NEW:** Already-patched detection — recognizes patched signatures and re-applies safely (e.g. for gain changes)
+- 🚀 **NEW:** Bounds-checked `PatchBytes` — every write validates `offset + length ≤ fileSize` and aborts on overflow
+- 🚀 **NEW:** File size gate (12–18 MB) rejects obviously wrong binaries before any patches are attempted
+- 🚀 **NEW:** Dynamic HighPassFilter stub — `mov rax, IMAGE_BASE + HighpassCutoffFilter; ret` computed at compile time from offset constants, no more hardcoded byte strings
+- 🛡️ **SECURITY:** Auto-updater now compares `[version]` objects and refuses downgrades (prevents v4.0 → v3.1 regression from stale remote)
+- 🔀 **CHANGED:** Repository moved to [Discord-Node-Patcher-Feb-9-2026](https://github.com/ProdHallow/Discord-Node-Patcher-Feb-9-2026)
+- 🔀 **CHANGED:** Voice backup files hosted in new repo's `discord_voice/` directory
+- 🛠️ **FIXED:** `char` signedness — HighPassFilter stub uses `unsigned char` array instead of signed `char` casts
 
-- Updated bitrate patching to 400 kbps across all known paths.
-- Added duplicate bitrate path patching.
-- Added encoder config constructor patching for 400 kbps hot-start.
-- Updated offsets for the Feb 9, 2026 build.
-- Improved binary validation and patch safety checks.
+### v3.1 — Bugfix Release
+- 🐛 **FIXED:** Mod clients (BetterDiscord, Vencord, Equicord, BetterVencord) showing "This client is not installed" when they share the same install path as Discord Stable
+- 🐛 **FIXED:** C++ generated code missing `Process32First` call — could silently skip the first process in the snapshot
+- 🐛 **FIXED:** MSVC compilation could deadlock when reading stdout/stderr; now redirects to log file with 120-second timeout
+- 🐛 **FIXED:** MSVC build path parsing broken for usernames containing spaces
+- 🐛 **FIXED:** `$args` variable shadowing in MinGW/Clang compilation
+- 🐛 **FIXED:** `-SkipUpdateCheck` flag not passed through during auto-elevation
+- ✨ Added `DetectPath` for mod clients — checks for mod-specific folders (e.g. `%APPDATA%\BetterDiscord`) before listing as installed
+- ✨ Added config file validation for out-of-range gain values
+- ✨ Added `Cleanup-TempFiles` — removes compiler artifacts after patching
+- 🧹 Removed comment blocks; replaced `#region`/`#endregion` with numbered section headers
 
-For release history:
-- https://github.com/ProdHallow/Discord-Node-Patcher-Feb-9-2026/releases
+### v3.0 — Major Release
+- 🚀 **NEW:** Automatic voice module replacement from GitHub
+- 🚀 **NEW:** Auto-relaunch checkbox — automatically restart Discord after patching
+- 🐛 **FIXED:** Gain slider now responds to all input types (click, drag, keyboard)
+- 🐛 **FIXED:** Replaced minified C++ code with clean original code (fixes Discord crash on voice join)
+- ⚠️ **Breaking Change:** Patches are now applied to known-compatible module files rather than arbitrary Discord versions
 
-## Disclaimer
+### v2.6.2
+- 🐛 Fixed MSVC compilation error ("Cannot open source file")
+- ✨ Added auto-update system
+- ✨ Added BAT launcher
 
-This tool modifies Discord client files. Use at your own risk.
-Re-run patching after Discord updates. Not affiliated with Discord Inc.
+### v2.6.1
+- 🐛 Fixed empty string parameter error
+- 🐛 Fixed array handling issues
+- 🐛 Fixed GUI variable scoping
+
+### v2.6.0
+- ✨ Multi-client detection (9 Discord variants)
+- ✨ "Patch All" button
+- ✨ CLI batch mode (`-FixAll`, `-FixClient`)
+
+### v2.5
+- ✨ Disk-based detection (no voice channel needed)
+- ✨ Auto-elevation
+
+[View full changelog →](https://github.com/ProdHallow/Discord-Node-Patcher-Feb-9-2026/releases)
+
+</details>
+
+<details>
+<summary><h2>🔬 Technical Details</h2></summary>
+
+### How It Works (v5.0)
+
+1. Downloads compatible voice module files from GitHub backup repository
+2. Closes Discord processes
+3. Backs up existing voice module (for rollback)
+4. Replaces voice module files with compatible versions
+5. **Validates binary** — checks original bytes at 3 code sections to confirm correct build
+6. PowerShell generates C++ patcher code with your settings
+7. Compiles to an executable using your C++ compiler
+8. Applies **bounds-checked** binary patches at 18 specific memory offsets
+9. Cleans up temporary compiler artifacts
+10. Optionally relaunches Discord
+
+### What Gets Patched
+
+| Component | Change |
+|-----------|--------|
+| Stereo | Disables mono downmix |
+| Bitrate | Removes 64kbps cap → 400kbps |
+| Sample Rate | Bypasses 24kHz limit → 48kHz |
+| Duplicate Bitrate Path | Patches parallel calculation function |
+| Encoder Init | Hot-starts both constructors at 400kbps |
+| Audio Processing | Replaces filters with gain control |
+| Error Handler | Disabled to prevent patch-related throws |
+
+### Offset Table (Feb 9, 2026 Build)
+
+```
+0x53840B  EmulateStereoSuccess1            → 02
+0x538417  EmulateStereoSuccess2            → EB (JMP)
+0x118C41  CreateAudioFrameStereo           → 49 89 C5 90
+0x3A7374  OpusConfigChannels               → 02
+0x0D7E49  MonoDownmixer                    → NOP sled + JMP
+0x53886A  EmulateBitrateModified           → 80 1A 06 (400kbps)
+0x53A691  SetsBitrateBitrateValue          → 80 1A 06 00 00
+0x53A699  SetsBitrateBitwiseOr             → 90 90 90
+0x53D750  DuplicateEmulateBitrateModified  → 80 1A 06 (400kbps)
+0x538573  Emulate48Khz                     → 90 90 90
+0x544680  HighPassFilter                   → mov rax, <HPC VA>; ret
+0x8BD4C0  HighpassCutoffFilter             → injected hp_cutoff()
+0x8BD6A0  DcReject                         → injected dc_reject()
+0x8B9830  DownmixFunc                      → C3 (ret)
+0x3A7610  ConfigIsOk                       → return 1
+0x2C0040  ThrowError                       → C3 (ret)
+0x3A737E  EncoderConfigInit1               → 80 1A 06 00 (400kbps default)
+0x3A6C87  EncoderConfigInit2               → 80 1A 06 00 (400kbps default)
+```
+
+### Safety Features
+
+| Check | What It Catches |
+|-------|----------------|
+| File size gate (12–18 MB) | Completely wrong file type |
+| Pre-patch byte probes (3 sections) | Wrong build / wrong Discord version |
+| Already-patched detection | Re-patching safely for gain changes |
+| Per-write bounds check | Offset overflow from build mismatch |
+| Version-aware auto-update | Prevents downgrade to older offsets |
+
+</details>
+
+---
+
+## 👥 Credits
+
+**Offsets & Research** — Cypher · Oracle  
+**Script & GUI** — Claude (Anthropic)  
+**Enhancements** — ProdHallow
+
+---
+
+> ⚠️ **Disclaimer:** Modifies Discord files. Use at your own risk. Re-run after Discord updates. Not affiliated with Discord Inc.
+
+<div align="center">
+
+**[Report Issue](https://github.com/ProdHallow/Discord-Node-Patcher-Feb-9-2026/issues)** · **[Releases](https://github.com/ProdHallow/Discord-Node-Patcher-Feb-9-2026/releases)** · **[Source Code](https://github.com/ProdHallow/Discord-Node-Patcher-Feb-9-2026)**
+
+</div>
