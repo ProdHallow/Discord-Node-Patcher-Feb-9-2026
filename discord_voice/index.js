@@ -32,11 +32,16 @@ if (isElectronRenderer) {
   }
 }
 
-const isFileManagerAvailable = isElectronRenderer ? window.DiscordNative.fileManager : null;
+// Init logging
+const isFileManagerAvailable = window?.DiscordNative?.fileManager;
 const isLogDirAvailable = isFileManagerAvailable?.getAndCreateLogDirectorySync;
 let logDirectory;
 if (isLogDirAvailable) {
   logDirectory = window.DiscordNative.fileManager.getAndCreateLogDirectorySync();
+  // TODO If/when we move away from utilizing webRTC logging in voice:
+  //   This module uses a different approach to the log-level, particularly an integer value rather than a string.
+  //   We should eventually try to align on the string approach (and querying it from our common settings) used by other modules.
+  // logLevel = window.DiscordNative.fileManager.logLevelSync();
 } else {
   console.warn('Unable to find log directory');
 }
@@ -79,11 +84,13 @@ function parseArguments(args) {
   for (let i = 0; i < args.length; i++) {
     const parts = args[i].split('=');
     const arg = parts[0];
-    const hasInlineValue = parts.length > 1;
-    const inlineValue = hasInlineValue ? parts.slice(1).join('=') : undefined;
+    const inlineValue = parts.slice(1).join('='); // Join the rest back together in case there are '=' in the value
 
     function getValue() {
-      return hasInlineValue ? inlineValue : args[++i];
+      if (inlineValue !== undefined) {
+        return inlineValue;
+      }
+      return args[++i];
     }
 
     switch (arg) {
@@ -122,43 +129,6 @@ const useFakeVideoCapture = argv['use-fake-video-capture'];
 const useFileForFakeVideoCapture = argv['use-file-for-fake-video-capture'];
 const useFakeAudioCapture = argv['use-fake-audio-capture'];
 const useFilesForFakeAudioCapture = argv['use-files-for-fake-audio-capture'];
-const FORCED_AUDIO_BITRATE = 400000;
-
-function applyAudioTransportPatch(options) {
-  const patchedOptions = options ?? {};
-  patchedOptions.audioEncoder = patchedOptions.audioEncoder || {};
-  patchedOptions.audioEncoder.params = {
-    ...(patchedOptions.audioEncoder.params || {}),
-    maxaveragebitrate: FORCED_AUDIO_BITRATE,
-    useinbandfec: 0,
-    usedtx: 0,
-    cbr: 1,
-    maxplaybackrate: 48000,
-  };
-  patchedOptions.audioEncoder.freq = 48000;
-  patchedOptions.audioEncoder.rate = FORCED_AUDIO_BITRATE;
-  patchedOptions.audioEncoder.pacsize = 960;
-  patchedOptions.audioEncoder.bits_per_sample = 16;
-
-  patchedOptions.disable_agc = true;
-  patchedOptions.disable_noise_suppression = true;
-  patchedOptions.disable_echo_cancellation = true;
-  patchedOptions.echoCancellation = false;
-  patchedOptions.noiseSuppression = false;
-  patchedOptions.automaticGainControl = false;
-
-  patchedOptions.encodingVoiceBitRate = FORCED_AUDIO_BITRATE;
-  patchedOptions.encodingVoiceBitrate = FORCED_AUDIO_BITRATE;
-  return patchedOptions;
-}
-
-function safeStringify(value) {
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch (error) {
-    return `[unserializable options: ${error.message}]`;
-  }
-}
 
 features.declareSupported('voice_panning');
 features.declareSupported('voice_multiple_connections');
@@ -170,6 +140,7 @@ features.declareSupported('set_video_device_by_id');
 features.declareSupported('loopback');
 features.declareSupported('experiment_config');
 features.declareSupported('remote_locus_network_control');
+//features.declareSupported('connection_replay');
 features.declareSupported('simulcast');
 features.declareSupported('simulcast_bugfix');
 features.declareSupported('direct_video');
@@ -197,10 +168,12 @@ if (process.platform === 'darwin') {
 }
 
 if (process.platform === 'linux') {
+  // from WebRTC DesktopCapturer::IsRunningUnderWayland()
   const sessionType = process.env.XDG_SESSION_TYPE;
   const isUnderWayland = sessionType?.startsWith('wayland') && process.env.WAYLAND_DISPLAY != null;
 
   const currentDesktop = process.env.XDG_CURRENT_DESKTOP;
+  // we only want to enable the gamescope capturer if we're running in a non-nested gamescope session
   const isUnderGamescope =
     !isUnderWayland && currentDesktop?.includes('gamescope') && process.env.GAMESCOPE_WAYLAND_DISPLAY != null;
   const isVaapiEnabled = VoiceEngine.isVaapiEnabled();
@@ -212,6 +185,7 @@ if (process.platform === 'linux') {
     features.declareSupported('vaapi');
   }
   if (isUnderGamescope && isVaapiEnabled) {
+    // ensure we have access to the pipewire socket
     const runtimeDir = process.env.PIPEWIRE_RUNTIME_DIR || process.env.XDG_RUNTIME_DIR || process.env.USERPROFILE;
     if (runtimeDir) {
       const socketName = runtimeDir + '/' + (process.env.PIPEWIRE_REMOTE || 'pipewire-0');
@@ -225,6 +199,7 @@ if (process.platform === 'linux') {
 
 if (
   process.platform === 'win32'
+  || process.platform === 'linux'
   || (process.platform === 'darwin' && versionGreaterThanOrEqual(os.release(), '16.0.0'))
 ) {
   features.declareSupported('mediapipe');
@@ -256,7 +231,7 @@ function bindConnectionInstance(instance) {
   return {
     destroy: () => instance.destroy(),
 
-    setTransportOptions: (options) => instance.setTransportOptions(applyAudioTransportPatch(options)),
+    setTransportOptions: (options) => instance.setTransportOptions(options),
     setSelfMute: (mute) => instance.setSelfMute(mute),
     setSelfDeafen: (deaf) => instance.setSelfDeafen(deaf),
 
@@ -326,6 +301,7 @@ function bindConnectionInstance(instance) {
     stopSamplesLocalPlayback: (sourceId) => instance.stopSamplesLocalPlayback(sourceId),
     stopAllSamplesLocalPlayback: () => instance.stopAllSamplesLocalPlayback(),
     setOnVideoEncoderFallbackCallback: (codecName) => instance.setOnVideoEncoderFallbackCallback(codecName),
+    setOnVideoDecoderFallbackCallback: (codecName) => instance.setOnVideoDecoderFallbackCallback(codecName),
     setOnRtcpMessageCallback: (callback) => instance.setOnRtcpMessageCallback?.(callback),
     presentDesktopSourcePicker: (style) => instance.presentDesktopSourcePicker(style),
   };
@@ -343,6 +319,10 @@ VoiceEngine.createVoiceConnectionWithOptions = function (userId, connectionOptio
 };
 VoiceEngine.createOwnStreamConnectionWithOptions = VoiceEngine.createVoiceConnectionWithOptions;
 
+// TODO(dyc): |audioEngineId| is vestigial and does not actually get used.
+// "default" was (we deleted audio engine IDs with the removal of android's
+// separate gameAudio engine) hardcoded within nativelib. update the API to
+// reflect this.
 VoiceEngine.createReplayConnection = function (audioEngineId, callback, replayLog) {
   if (replayLog == null) {
     return null;
@@ -361,6 +341,8 @@ const setAudioSubsystemInternal = function (subsystem, forceRestart) {
 
   if (isElectronRenderer) {
     if (forceRestart) {
+      // DANGER: any unconditional call to setAudioSubsytem will bootloop if we don't
+      // debounce noop changes.
       if (subsystem === audioSubsystem) {
         return;
       }
@@ -415,31 +397,6 @@ VoiceEngine.getDebugLogging = function () {
 const videoStreams = {};
 const directVideoStreams = {};
 
-const ensureCanvasContext = function (sinkId) {
-  let canvas = document.getElementById(sinkId);
-  if (canvas == null) {
-    for (const popout of window.popouts.values()) {
-      const element = popout.document != null && popout.document.getElementById(sinkId);
-      if (element != null) {
-        canvas = element;
-        break;
-      }
-    }
-
-    if (canvas == null) {
-      return null;
-    }
-  }
-
-  const context = canvas.getContext('2d');
-  if (context == null) {
-    log('info', `Failed to initialize context for sinkId ${sinkId}`);
-    return null;
-  }
-
-  return context;
-};
-
 let activeSinksChangeCallback;
 VoiceEngine.setActiveSinksChangeCallback = function (callback) {
   activeSinksChangeCallback = callback;
@@ -456,8 +413,12 @@ function notifyActiveSinksChange(streamId) {
   activeSinksChangeCallback(streamId, hasVideoStreamSink || hasDirectVideoStreamSink);
 }
 
+// [adill] NB: with context isolation it has become extremely costly (both memory & performance) to provide the image
+// data directly to clients at any reasonably fast interval so we've replaced setVideoOutputSink with a direct canvas
+// renderer via addVideoOutputSink
 const setVideoOutputSink = VoiceEngine.setVideoOutputSink;
 const clearVideoOutputSink = (streamId) => {
+  // [adill] NB: if you don't pass a frame callback setVideoOutputSink clears the sink
   setVideoOutputSink(streamId);
 };
 const signalVideoOutputSinkReady = VoiceEngine.signalVideoOutputSinkReady;
@@ -470,6 +431,7 @@ function addVideoOutputSinkInternal(sinkId, streamId, frameCallback) {
     sinks = videoStreams[streamId] = new Map();
   }
 
+  // notifyActiveSinksChange relies on videoStreams having the correct state
   const needsToSubscribeToFrames = sinks.size === 0;
   sinks.set(sinkId, frameCallback);
 
@@ -491,24 +453,7 @@ function addVideoOutputSinkInternal(sinkId, streamId, frameCallback) {
   }
 }
 
-VoiceEngine.addVideoOutputSink = function (sinkId, streamId, frameCallback) {
-  let canvasContext = null;
-  addVideoOutputSinkInternal(sinkId, streamId, (imageData) => {
-    if (canvasContext == null) {
-      canvasContext = ensureCanvasContext(sinkId);
-      if (canvasContext == null) {
-        return;
-      }
-    }
-    if (frameCallback != null) {
-      frameCallback(imageData.width, imageData.height);
-    }
-    canvasContext.getImageData(0, 0, 1, 1);
-    canvasContext.putImageData(imageData, 0, 0);
-  });
-};
-
-VoiceEngine.removeVideoOutputSink = function (sinkId, streamId) {
+function removeVideoOutputSink(sinkId, streamId) {
   const sinks = videoStreams[streamId];
   if (sinks != null) {
     sinks.delete(sinkId);
@@ -519,8 +464,10 @@ VoiceEngine.removeVideoOutputSink = function (sinkId, streamId) {
       notifyActiveSinksChange(streamId);
     }
   }
-};
+}
 
+// We wrap the direct video calls so we can keep track of all active
+// video output sinks
 const addDirectVideoOutputSink_ = VoiceEngine.addDirectVideoOutputSink;
 const removeDirectVideoOutputSink_ = VoiceEngine.removeDirectVideoOutputSink;
 VoiceEngine.addDirectVideoOutputSink = function (streamId) {
@@ -542,12 +489,12 @@ VoiceEngine.getNextVideoOutputFrame = function (streamId) {
 
   return new Promise((resolve, reject) => {
     setTimeout(() => {
-      VoiceEngine.removeVideoOutputSink(nextVideoFrameSinkId, streamId);
+      removeVideoOutputSink(nextVideoFrameSinkId, streamId);
       reject(new Error('getNextVideoOutputFrame timeout'));
     }, 5000);
 
     addVideoOutputSinkInternal(nextVideoFrameSinkId, streamId, (imageData) => {
-      VoiceEngine.removeVideoOutputSink(nextVideoFrameSinkId, streamId);
+      removeVideoOutputSink(nextVideoFrameSinkId, streamId);
       resolve({
         width: imageData.width,
         height: imageData.height,
@@ -566,6 +513,8 @@ function log(level, message) {
   })();
   consoleLogFn(message);
 
+  // Note: this currently races with the VoiceEngine initialization,
+  // not all logs may get logged here early in the process
   VoiceEngine.consoleLog(level, message);
 }
 
@@ -584,50 +533,5 @@ VoiceEngine.initialize({
   asyncVideoInputDeviceInit,
   asyncClipsSourceDeinit,
 });
-
-console.log('[PATCH] Applying audio and video settings...');
-
-const originalSetTransportOptions = VoiceEngine.setTransportOptions;
-VoiceEngine.setTransportOptions = function(options) {
-  console.log('[PATCH] Original options:', safeStringify(options));
-  const patchedOptions = applyAudioTransportPatch(options);
-  
-  // Video encoder settings
-  patchedOptions.videoEncoder = patchedOptions.videoEncoder || {};
-  patchedOptions.videoEncoder.type = 'H264';
-  patchedOptions.videoEncoder.width = 1920;
-  patchedOptions.videoEncoder.height = 1080;
-  patchedOptions.videoEncoder.framerate = 60;
-  patchedOptions.videoEncoder.profile = 'high';
-  patchedOptions.videoEncoder.h264Profile = 100;
-  patchedOptions.videoEncoder.preset = 'veryfast';
-  patchedOptions.videoEncoder.tune = 'zerolatency';
-  
-  // Video bitrate
-  patchedOptions.videoBitrate = 10000000;
-  patchedOptions.videoBitrateMax = 10000000;
-  patchedOptions.videoBitrateMin = 3000000;
-  patchedOptions.videoBitrateTarget = 10000000;
-  
-  // Video quality settings
-  patchedOptions.videoQualityMode = 2;
-  patchedOptions.keyframeInterval = 3000;
-  patchedOptions.qpMin = 0;
-  patchedOptions.qpMax = 30;
-  patchedOptions.prioritizeFramerate = true;
-  patchedOptions.maxFramerate = 60;
-  patchedOptions.minFramerate = 60;
-  
-  // Hardware settings
-  patchedOptions.hardwareH264 = true;
-  patchedOptions.adaptiveBitrate = false;
-  patchedOptions.adaptiveFramerate = false;
-  
-  console.log('[PATCH] Final options:', safeStringify(patchedOptions));
-  return originalSetTransportOptions.call(this, patchedOptions);
-};
-
-console.log('[PATCH] Audio: Echo cancellation, noise suppression, and AGC disabled. Bitrate set to 400kbps.');
-console.log('[PATCH] Video: 1920x1080 @ 60fps, 10Mbps bitrate, H264 High Profile.');
 
 module.exports = VoiceEngine;
