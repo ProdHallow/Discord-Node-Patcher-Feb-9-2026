@@ -430,43 +430,97 @@ function Show-BackupList {
     Write-Host ""
 }
 
+function Get-VoiceModulePaths {
+    param([Parameter(Mandatory)][string]$AppPath)
+
+    $modulesPath = Join-Path $AppPath "modules"
+    $voiceModules = @(
+        Get-ChildItem $modulesPath -Filter "discord_voice*" -Directory -ErrorAction SilentlyContinue
+    )
+    if ($voiceModules.Count -eq 0) {
+        return $null
+    }
+
+    $voiceModule = $voiceModules[0]
+    $nestedVoiceFolder = Join-Path $voiceModule.FullName "discord_voice"
+    $voiceFolderPath = if (Test-Path $nestedVoiceFolder) { $nestedVoiceFolder } else { $voiceModule.FullName }
+    $voiceNodePath = Join-Path $voiceFolderPath "discord_voice.node"
+
+    return @{
+        ModulesPath = $modulesPath
+        VoiceModule = $voiceModule
+        VoiceFolderPath = $voiceFolderPath
+        VoiceNodePath = $voiceNodePath
+    }
+}
+
 function Restore-FromBackup {
     param([string]$BackupPath = $null)
-    Write-Banner; Write-Log "Starting restore..." -Level Info
+
+    Write-Banner
+    Write-Log "Starting restore..." -Level Info
+
     if (-not $BackupPath) {
         $backups = Get-BackupList
-        if ($backups.Count -eq 0) { Write-Log "No backups found" -Level Error; return $false }
+        if ($backups.Count -eq 0) {
+            Write-Log "No backups found" -Level Error
+            return $false
+        }
+
         Show-BackupList
         $sel = Read-Host "Select backup (1-$($backups.Count)) or Enter for most recent"
-        if ([string]::IsNullOrWhiteSpace($sel)) { $BackupPath = $backups[0].Path }
-        else {
-            $idx = 0; if (-not [int]::TryParse($sel, [ref]$idx) -or $idx -lt 1 -or $idx -gt $backups.Count) {
-                Write-Log "Invalid selection" -Level Error; return $false
+        if ([string]::IsNullOrWhiteSpace($sel)) {
+            $BackupPath = $backups[0].Path
+        } else {
+            $idx = 0
+            if (-not [int]::TryParse($sel, [ref]$idx) -or $idx -lt 1 -or $idx -gt $backups.Count) {
+                Write-Log "Invalid selection" -Level Error
+                return $false
             }
             $BackupPath = $backups[$idx - 1].Path
         }
     }
+
     $installedClients = Get-InstalledClients
-    if ($installedClients.Count -eq 0) { Write-Log "No Discord clients found to restore to" -Level Error; return $false }
+    if ($installedClients.Count -eq 0) {
+        Write-Log "No Discord clients found to restore to" -Level Error
+        return $false
+    }
+
     Write-Log "Found $($installedClients.Count) client(s) to restore:" -Level Info
-    for ($i = 0; $i -lt $installedClients.Count; $i++) { Write-Log "  [$($i+1)] $($installedClients[$i].Name.Trim())" -Level Info }
+    for ($i = 0; $i -lt $installedClients.Count; $i++) {
+        Write-Log "  [$($i+1)] $($installedClients[$i].Name.Trim())" -Level Info
+    }
+
     $sel = Read-Host "Select client to restore (1-$($installedClients.Count)) or Enter for first"
     $targetIdx = 0
     if (-not [string]::IsNullOrWhiteSpace($sel)) {
         if (-not [int]::TryParse($sel, [ref]$targetIdx) -or $targetIdx -lt 1 -or $targetIdx -gt $installedClients.Count) {
-            Write-Log "Invalid selection" -Level Error; return $false
+            Write-Log "Invalid selection" -Level Error
+            return $false
         }
         $targetIdx--
     }
+
     $targetClient = $installedClients[$targetIdx]
-    if (-not $targetClient -or -not $targetClient.AppPath) { Write-Log "Invalid target client" -Level Error; return $false }
-    $voiceModules = @(Get-ChildItem "$($targetClient.AppPath)\modules" -Filter "discord_voice*" -Directory -ErrorAction SilentlyContinue)
-    if ($voiceModules.Count -eq 0) { Write-Log "No voice module found in target client" -Level Error; return $false }
-    $voiceModule = $voiceModules[0]
-    $voiceFolderPath = if (Test-Path "$($voiceModule.FullName)\discord_voice") { "$($voiceModule.FullName)\discord_voice" } else { $voiceModule.FullName }
-    $targetPath = Join-Path $voiceFolderPath "discord_voice.node"
+    if (-not $targetClient -or -not $targetClient.AppPath) {
+        Write-Log "Invalid target client" -Level Error
+        return $false
+    }
+
+    $voiceInfo = Get-VoiceModulePaths -AppPath $targetClient.AppPath
+    if (-not $voiceInfo) {
+        Write-Log "No voice module found in target client" -Level Error
+        return $false
+    }
+
+    $targetPath = $voiceInfo.VoiceNodePath
     Write-Log "Target: $targetPath" -Level Info
-    if ((Read-Host "Replace current file with backup? (y/N)") -notin @('y', 'Y')) { return $false }
+
+    if ((Read-Host "Replace current file with backup? (y/N)") -notin @('y', 'Y')) {
+        return $false
+    }
+
     try {
         Write-Log "Closing Discord processes..." -Level Info
         Stop-AllDiscordProcesses | Out-Null
@@ -474,7 +528,10 @@ function Restore-FromBackup {
         Copy-Item -Path $BackupPath -Destination $targetPath -Force
         Write-Log "Restore complete! Restart Discord." -Level Success
         return $true
-    } catch { Write-Log "Restore failed: $_" -Level Error; return $false }
+    } catch {
+        Write-Log "Restore failed: $_" -Level Error
+        return $false
+    }
 }
 
 function Backup-VoiceNode {
@@ -1179,62 +1236,130 @@ function Invoke-Compilation {
 
 # region Core Patching
 
+function Get-UniqueClientsByAppPath {
+    param([array]$Clients)
+
+    $uniquePaths = @{}
+    $uniqueClients = [System.Collections.ArrayList]::new()
+
+    foreach ($client in $Clients) {
+        if (-not $client.AppPath) {
+            continue
+        }
+        if ($uniquePaths.ContainsKey($client.AppPath)) {
+            continue
+        }
+
+        $uniquePaths[$client.AppPath] = $true
+        [void]$uniqueClients.Add($client)
+    }
+
+    return @($uniqueClients)
+}
+
+function Get-PreparedVoiceBackupPath {
+    Write-Log "Downloading voice backup files from GitHub..." -Level Info
+    $voiceBackupPath = Join-Path $Script:Config.TempDir "VoiceBackup"
+    EnsureDir $voiceBackupPath
+    if (-not (Download-VoiceBackupFiles $voiceBackupPath)) {
+        Write-Log "Failed to download voice backup files" -Level Error
+        return $null
+    }
+
+    return $voiceBackupPath
+}
+
 function Invoke-PatchClients {
     param([array]$Clients, [hashtable]$Compiler, [string]$VoiceBackupPath)
-    if (-not $Clients -or $Clients.Count -eq 0) { return @{ Success = 0; Failed = @(); Total = 0 } }
+
+    if (-not $Clients -or $Clients.Count -eq 0) {
+        return @{ Success = 0; Failed = @(); Total = 0 }
+    }
+
+    $allClientNames = @($Clients | ForEach-Object { $_.Name.Trim() })
     if (-not $VoiceBackupPath -or -not (Test-Path $VoiceBackupPath)) {
         Write-Log "Voice backup path not found: $VoiceBackupPath" -Level Error
-        return @{ Success = 0; Failed = @($Clients | ForEach-Object { $_.Name.Trim() }); Total = $Clients.Count }
+        return @{ Success = 0; Failed = $allClientNames; Total = $Clients.Count }
     }
+
     $backupFiles = @(Get-ChildItem $VoiceBackupPath -File -ErrorAction SilentlyContinue)
     if ($backupFiles.Count -eq 0) {
         Write-Log "No files found in voice backup path" -Level Error
-        return @{ Success = 0; Failed = @($Clients | ForEach-Object { $_.Name.Trim() }); Total = $Clients.Count }
+        return @{ Success = 0; Failed = $allClientNames; Total = $Clients.Count }
     }
+
     Write-Log "Voice backup contains $($backupFiles.Count) files" -Level Info
     $successCount = 0
     $failedClients = [System.Collections.ArrayList]::new()
+
     foreach ($ci in $Clients) {
+        $clientName = $ci.Name.Trim()
         Write-Host ""
-        Write-Log "=== Processing: $($ci.Name.Trim()) ===" -Level Info
+        Write-Log "=== Processing: $clientName ===" -Level Info
         try {
             $appPath = $ci.AppPath
-            if (-not $appPath -or -not (Test-Path $appPath)) { throw "Invalid app path: $appPath" }
+            if (-not $appPath -or -not (Test-Path $appPath)) {
+                throw "Invalid app path: $appPath"
+            }
+
             $version = Get-DiscordAppVersion $appPath
             Write-Log "Version: $version" -Level Info
-            $voiceModules = @(Get-ChildItem "$appPath\modules" -Filter "discord_voice*" -Directory -ErrorAction SilentlyContinue)
-            if ($voiceModules.Count -eq 0) { throw "No discord_voice module found in $appPath\modules" }
-            $voiceModule = $voiceModules[0]
-            $voiceFolderPath = if (Test-Path "$($voiceModule.FullName)\discord_voice") { "$($voiceModule.FullName)\discord_voice" } else { $voiceModule.FullName }
-            Write-Log "Voice folder: $voiceFolderPath" -Level Info
-            $voiceNodePath = Join-Path $voiceFolderPath "discord_voice.node"
-            if (Test-Path $voiceNodePath) {
-                if (-not (Backup-VoiceNode $voiceNodePath $ci.Name) -and -not $Script:Config.SkipBackup) { throw "Backup failed" }
+
+            $voiceInfo = Get-VoiceModulePaths -AppPath $appPath
+            if (-not $voiceInfo) {
+                throw "No discord_voice module found in $(Join-Path $appPath 'modules')"
             }
+
+            $voiceFolderPath = $voiceInfo.VoiceFolderPath
+            $voiceNodePath = $voiceInfo.VoiceNodePath
+            Write-Log "Voice folder: $voiceFolderPath" -Level Info
+
+            if (Test-Path $voiceNodePath) {
+                if (-not (Backup-VoiceNode $voiceNodePath $ci.Name) -and -not $Script:Config.SkipBackup) {
+                    throw "Backup failed"
+                }
+            }
+
             Write-Log "Removing old voice module files..." -Level Info
-            if (Test-Path $voiceFolderPath) { Remove-Item "$voiceFolderPath\*" -Recurse -Force -ErrorAction SilentlyContinue }
-            else { EnsureDir $voiceFolderPath }
+            if (Test-Path $voiceFolderPath) {
+                Remove-Item "$voiceFolderPath\*" -Recurse -Force -ErrorAction SilentlyContinue
+            } else {
+                EnsureDir $voiceFolderPath
+            }
+
             Write-Log "Installing compatible voice module..." -Level Info
             Copy-Item "$VoiceBackupPath\*" $voiceFolderPath -Recurse -Force
-            $voiceNodePath = Join-Path $voiceFolderPath "discord_voice.node"
-            if (-not (Test-Path $voiceNodePath)) { throw "discord_voice.node not found after copying backup files" }
+            if (-not (Test-Path $voiceNodePath)) {
+                throw "discord_voice.node not found after copying backup files"
+            }
+
             Write-Log "Voice node: $voiceNodePath" -Level Info
             Write-Log "File size: $([Math]::Round((Get-Item $voiceNodePath).Length / 1MB, 2)) MB" -Level Info
+
             $src = New-SourceFiles -ProcessName $ci.Client.Exe
-            if (-not $src) { throw "Source generation failed" }
+            if (-not $src) {
+                throw "Source generation failed"
+            }
+
             $exe = Invoke-Compilation -Compiler $Compiler -SourceFiles $src
-            if (-not $exe) { throw "Compilation failed" }
+            if (-not $exe) {
+                throw "Compilation failed"
+            }
+
             Write-Log "Applying binary patches with $($Script:Config.AudioGainMultiplier)x gain setting..." -Level Info
             $patchProc = Start-Process -FilePath $exe -ArgumentList "`"$voiceNodePath`"" -Wait -PassThru -NoNewWindow
             if ($patchProc.ExitCode -eq 0) {
-                Write-Log "Successfully patched $($ci.Name.Trim()) with $($Script:Config.AudioGainMultiplier)x gain!" -Level Success
+                Write-Log "Successfully patched $clientName with $($Script:Config.AudioGainMultiplier)x gain!" -Level Success
                 $successCount++
-            } else { throw "Patcher exited with code $($patchProc.ExitCode)" }
+            } else {
+                throw "Patcher exited with code $($patchProc.ExitCode)"
+            }
         } catch {
-            Write-Log "Failed to patch $($ci.Name.Trim()): $_" -Level Error
-            [void]$failedClients.Add($ci.Name.Trim())
+            Write-Log "Failed to patch $clientName: $_" -Level Error
+            [void]$failedClients.Add($clientName)
         }
     }
+
     Cleanup-TempFiles
     return @{ Success = $successCount; Failed = @($failedClients); Total = $Clients.Count }
 }
@@ -1278,36 +1403,56 @@ function Start-Patching {
         Initialize-Environment
         Write-Log "Scanning for installed Discord clients..." -Level Info
         $installedClients = @(Get-InstalledClients)
-        if ($installedClients.Count -eq 0) { Write-Log "No Discord clients found! Make sure Discord is installed." -Level Error; Read-Host "Press Enter"; return $false }
+        if ($installedClients.Count -eq 0) {
+            Write-Log "No Discord clients found! Make sure Discord is installed." -Level Error
+            Read-Host "Press Enter"
+            return $false
+        }
+
         if ($FixClient) {
             $installedClients = @($installedClients | Where-Object { $_.Name -like "*$FixClient*" })
-            if ($installedClients.Count -eq 0) { Write-Log "No clients matching '$FixClient' found" -Level Error; Read-Host "Press Enter"; return $false }
-        }
-        $uniquePaths = @{}
-        $uniqueClients = [System.Collections.ArrayList]::new()
-        foreach ($c in $installedClients) {
-            if ($c.AppPath -and -not $uniquePaths.ContainsKey($c.AppPath)) {
-                $uniquePaths[$c.AppPath] = $true
-                [void]$uniqueClients.Add($c)
+            if ($installedClients.Count -eq 0) {
+                Write-Log "No clients matching '$FixClient' found" -Level Error
+                Read-Host "Press Enter"
+                return $false
             }
         }
+
+        $uniqueClients = @(Get-UniqueClientsByAppPath -Clients $installedClients)
         Write-Log "Found $($uniqueClients.Count) client(s):" -Level Success
-        foreach ($c in $uniqueClients) { $v = Get-DiscordAppVersion $c.AppPath; Write-Log "  - $($c.Name.Trim()) (v$v)" -Level Info }
+        foreach ($c in $uniqueClients) {
+            $v = Get-DiscordAppVersion $c.AppPath
+            Write-Log "  - $($c.Name.Trim()) (v$v)" -Level Info
+        }
+
         $compiler = Find-Compiler
-        if (-not $compiler) { Read-Host "Press Enter"; return $false }
-        Write-Log "Downloading voice backup files from GitHub..." -Level Info
-        $voiceBackupPath = Join-Path $Script:Config.TempDir "VoiceBackup"
-        EnsureDir $voiceBackupPath
-        if (-not (Download-VoiceBackupFiles $voiceBackupPath)) { Write-Log "Failed to download voice backup files" -Level Error; Read-Host "Press Enter"; return $false }
+        if (-not $compiler) {
+            Read-Host "Press Enter"
+            return $false
+        }
+
+        $voiceBackupPath = Get-PreparedVoiceBackupPath
+        if (-not $voiceBackupPath) {
+            Read-Host "Press Enter"
+            return $false
+        }
+
         Write-Log "Closing all Discord processes..." -Level Info
         $stopped = Stop-AllDiscordProcesses
-        if (-not $stopped) { Write-Log "Warning: Some processes may still be running" -Level Warning; Start-Sleep -Seconds 2 }
+        if (-not $stopped) {
+            Write-Log "Warning: Some processes may still be running" -Level Warning
+            Start-Sleep -Seconds 2
+        }
+
         Start-Sleep -Seconds 1
         $result = Invoke-PatchClients -Clients @($uniqueClients) -Compiler $compiler -VoiceBackupPath $voiceBackupPath
         Write-Host ""
         Write-Log "=== PATCHING COMPLETE ===" -Level Success
         Write-Log "Success: $($result.Success) / $($result.Total)" -Level Info
-        if ($result.Failed -and $result.Failed.Count -gt 0) { Write-Log "Failed: $($result.Failed -join ', ')" -Level Warning }
+        if ($result.Failed -and $result.Failed.Count -gt 0) {
+            Write-Log "Failed: $($result.Failed -join ', ')" -Level Warning
+        }
+
         if ($Script:Config.AutoRelaunch -and $uniqueClients.Count -gt 0) {
             Write-Log "Auto-relaunching Discord..." -Level Info
             Start-Sleep -Seconds 1
@@ -1315,7 +1460,10 @@ function Start-Patching {
             $clientInfo = $Script:DiscordClients[$firstClient.Index]
             if ($clientInfo -and $clientInfo.Path -and (Test-Path $clientInfo.Path)) {
                 $updateExe = Join-Path $clientInfo.Path "Update.exe"
-                if (Test-Path $updateExe) { Write-Log "Launching: $($clientInfo.Name.Trim())" -Level Info; Start-Process $updateExe -ArgumentList "--processStart", $clientInfo.Exe }
+                if (Test-Path $updateExe) {
+                    Write-Log "Launching: $($clientInfo.Name.Trim())" -Level Info
+                    Start-Process $updateExe -ArgumentList "--processStart", $clientInfo.Exe
+                }
             }
         }
         Save-UserConfig
@@ -1325,32 +1473,65 @@ function Start-Patching {
 
     Write-Log "Opening GUI..." -Level Info
     $guiResult = Show-ConfigurationGUI
-    if (-not $guiResult) { Write-Log "Cancelled" -Level Warning; return $false }
+    if (-not $guiResult) {
+        Write-Log "Cancelled" -Level Warning
+        return $false
+    }
     Write-Log "GUI Action: $($guiResult.Action)" -Level Info
-    if ($guiResult.Action -eq 'Restore') { return Restore-FromBackup }
-    if ($guiResult.Action -notin @('Patch', 'PatchAll')) { Write-Log "Cancelled" -Level Warning; return $false }
+    if ($guiResult.Action -eq 'Restore') {
+        return Restore-FromBackup
+    }
+    if ($guiResult.Action -notin @('Patch', 'PatchAll')) {
+        Write-Log "Cancelled" -Level Warning
+        return $false
+    }
+
     $Script:Config.AudioGainMultiplier = $guiResult.Multiplier
     $Script:Config.SkipBackup = $guiResult.SkipBackup
     $Script:Config.AutoRelaunch = $guiResult.AutoRelaunch
     Write-Log "GUI Settings: Gain = $($Script:Config.AudioGainMultiplier)x, Skip Backup = $($Script:Config.SkipBackup), Auto Relaunch = $($Script:Config.AutoRelaunch)" -Level Info
-    if ($guiResult.Action -eq 'PatchAll') { $Script:DoFixAll = $true; return Start-Patching }
+    if ($guiResult.Action -eq 'PatchAll') {
+        $Script:DoFixAll = $true
+        return Start-Patching
+    }
+
     Show-Settings
     Initialize-Environment
     $selectedClientInfo = $Script:DiscordClients[$guiResult.ClientIndex]
-    if (-not $selectedClientInfo) { Write-Log "Invalid client selection" -Level Error; Read-Host "Press Enter"; return $false }
+    if (-not $selectedClientInfo) {
+        Write-Log "Invalid client selection" -Level Error
+        Read-Host "Press Enter"
+        return $false
+    }
+
     Write-Log "Selected client: $($selectedClientInfo.Name.Trim())" -Level Info
     $installedClients = @(Get-InstalledClients)
     $targetClient = $installedClients | Where-Object { $_.Index -eq $guiResult.ClientIndex } | Select-Object -First 1
-    if (-not $targetClient) { Write-Log "Selected client is not installed!" -Level Error; Read-Host "Press Enter"; return $false }
+    if (-not $targetClient) {
+        Write-Log "Selected client is not installed!" -Level Error
+        Read-Host "Press Enter"
+        return $false
+    }
+
     $compiler = Find-Compiler
-    if (-not $compiler) { Read-Host "Press Enter"; return $false }
-    Write-Log "Downloading voice backup files from GitHub..." -Level Info
-    $voiceBackupPath = Join-Path $Script:Config.TempDir "VoiceBackup"
-    EnsureDir $voiceBackupPath
-    if (-not (Download-VoiceBackupFiles $voiceBackupPath)) { Write-Log "Failed to download voice backup files" -Level Error; Read-Host "Press Enter"; return $false }
+    if (-not $compiler) {
+        Read-Host "Press Enter"
+        return $false
+    }
+
+    $voiceBackupPath = Get-PreparedVoiceBackupPath
+    if (-not $voiceBackupPath) {
+        Read-Host "Press Enter"
+        return $false
+    }
+
     Write-Log "Closing Discord processes..." -Level Info
     $stopped = Stop-DiscordProcesses $selectedClientInfo.Processes
-    if (-not $stopped) { Write-Log "Warning: Some processes may still be running" -Level Warning; Start-Sleep -Seconds 2 }
+    if (-not $stopped) {
+        Write-Log "Warning: Some processes may still be running" -Level Warning
+        Start-Sleep -Seconds 2
+    }
+
     Start-Sleep -Seconds 1
     $result = Invoke-PatchClients -Clients @($targetClient) -Compiler $compiler -VoiceBackupPath $voiceBackupPath
     Write-Host ""
@@ -1364,15 +1545,22 @@ function Start-Patching {
                 $appFolder = Get-ChildItem $discordPath -Directory -Filter "app-*" -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
                 if ($appFolder) {
                     $exePath = Join-Path $appFolder.FullName $selectedClientInfo.Exe
-                    if (Test-Path $exePath) { Write-Log "Launching: $exePath" -Level Info; Start-Process $exePath }
-                    else {
+                    if (Test-Path $exePath) {
+                        Write-Log "Launching: $exePath" -Level Info
+                        Start-Process $exePath
+                    } else {
                         $updateExe = Join-Path $discordPath "Update.exe"
-                        if (Test-Path $updateExe) { Write-Log "Launching via Update.exe..." -Level Info; Start-Process $updateExe -ArgumentList "--processStart", $selectedClientInfo.Exe }
+                        if (Test-Path $updateExe) {
+                            Write-Log "Launching via Update.exe..." -Level Info
+                            Start-Process $updateExe -ArgumentList "--processStart", $selectedClientInfo.Exe
+                        }
                     }
                 }
             }
         }
-    } else { Write-Log "=== PATCHING FAILED ===" -Level Error }
+    } else {
+        Write-Log "=== PATCHING FAILED ===" -Level Error
+    }
     Save-UserConfig
     Read-Host "Press Enter to exit"
     return ($result.Success -gt 0)
