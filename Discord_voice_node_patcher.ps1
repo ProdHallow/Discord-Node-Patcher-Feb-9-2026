@@ -15,7 +15,7 @@ $ProgressPreference = 'SilentlyContinue'
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing -ErrorAction SilentlyContinue
 
 $Script:UPDATE_URL_BASE = "https://raw.githubusercontent.com/ProdHallow/Discord-Node-Patcher/main/Discord_voice_node_patcher.ps1"
-$Script:SCRIPT_VERSION = "5.0.2"
+$Script:SCRIPT_VERSION = "5.0.1"
 
 # region Offsets (PASTE HERE)
 #

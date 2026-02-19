@@ -2,7 +2,7 @@
 
 **Studio-grade audio for Discord: 48kHz • 400kbps • True Stereo**
 
-![Version](https://img.shields.io/badge/Version-5.0.2-5865F2?style=flat-square)
+![Version](https://img.shields.io/badge/Version-5.0.1-5865F2?style=flat-square)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?style=flat-square)
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-5391FE?style=flat-square)
 
