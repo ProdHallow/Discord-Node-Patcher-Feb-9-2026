@@ -20,11 +20,21 @@ Just download and double-click. Always runs the latest version.
 
 ### Option 2: One-Liner (No Download)
 
+> ⚠️ This one-liner is **PowerShell**. It will **not** work in **Command Prompt (cmd.exe)**.
+>
+> If you pasted it into cmd.exe, use the cmd.exe version below (it launches PowerShell for you).
+
+#### PowerShell (recommended)
 ```powershell
 irm https://raw.githubusercontent.com/ProdHallow/Discord-Node-Patcher-Feb-9-2026/main/Discord_voice_node_patcher.ps1 -OutFile "$env:TEMP\dvp.ps1"; & "$env:TEMP\dvp.ps1"
 ```
 
-Paste into PowerShell and press Enter.
+#### Command Prompt (cmd.exe)
+```bat
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Join-Path $env:TEMP 'dvp.ps1'; irm 'https://raw.githubusercontent.com/ProdHallow/Discord-Node-Patcher-Feb-9-2026/main/Discord_voice_node_patcher.ps1' -OutFile $p; & $p"
+```
+
+Paste into the matching shell and press Enter.
 
 ---
 
@@ -127,6 +137,7 @@ notepad "$env:TEMP\DiscordVoicePatcher\patcher.log"
 
 ### Restore Original
 ```powershell
+# (PowerShell) Run the patcher again, then select "Restore" in the GUI
 irm https://raw.githubusercontent.com/ProdHallow/Discord-Node-Patcher-Feb-9-2026/main/Discord_voice_node_patcher.ps1 -OutFile "$env:TEMP\dvp.ps1"; & "$env:TEMP\dvp.ps1"
 # Then select "Restore" in the GUI
 ```
