@@ -432,13 +432,41 @@ function Get-InstalledClients {
 # region Process Management
 
 function Stop-DiscordProcesses {
-    param([string[]]$ProcessNames)
+    param([string[]]$ProcessNames, [string]$InstallPath)
     if (-not $ProcessNames -or $ProcessNames.Count -eq 0) { return $true }
     $p = Get-Process -Name $ProcessNames -ErrorAction SilentlyContinue
+    if (-not $p) { return $true }
+    if ($InstallPath -and (Test-Path $InstallPath)) {
+        try {
+            $installFull = (Get-Item $InstallPath).FullName.TrimEnd('\')
+            $toKill = @()
+            foreach ($proc in $p) {
+                $exePath = $null
+                try {
+                    $cim = Get-CimInstance Win32_Process -Filter "ProcessId=$($proc.Id)" -ErrorAction SilentlyContinue
+                    if ($cim -and $cim.ExecutablePath) { $exePath = $cim.ExecutablePath }
+                } catch { }
+                if (-not $exePath) { continue }
+                try { $exePath = (Get-Item $exePath).FullName } catch { continue }
+                if ($exePath -like "$installFull\*") { $toKill += $proc }
+            }
+            $p = $toKill
+        } catch { }
+    }
     if ($p) {
         $p | Stop-Process -Force -ErrorAction SilentlyContinue
         for ($i=0; $i -lt 20; $i++) {
-            if (-not (Get-Process -Name $ProcessNames -ErrorAction SilentlyContinue)) { return $true }
+            $remaining = Get-Process -Name $ProcessNames -ErrorAction SilentlyContinue
+            if (-not $remaining) { return $true }
+            if ($InstallPath -and (Test-Path $InstallPath)) {
+                $installFull = (Get-Item $InstallPath).FullName.TrimEnd('\')
+                $remaining = @($remaining | Where-Object {
+                    $exePath = $null
+                    try { $cim = Get-CimInstance Win32_Process -Filter "ProcessId=$($_.Id)" -ErrorAction SilentlyContinue; if ($cim -and $cim.ExecutablePath) { $exePath = (Get-Item $cim.ExecutablePath).FullName } } catch { }
+                    $exePath -and $exePath -like "$installFull\*"
+                })
+                if ($remaining.Count -eq 0) { return $true }
+            }
             Start-Sleep -Milliseconds 250
         }
         return $false
@@ -869,16 +897,20 @@ extern "C" void __cdecl hp_cutoff(const float* in, int cutoff_Hz, float* out, in
     *(int*)((char*)st + 164) = -1;
     *(int*)((char*)st + 184) = 0;
 
-    // Unity loudness across mono/stereo: scale by ~1/sqrt(channels).
-    // Implemented via SSE rsqrt on runtime channels to keep injected code self-contained
-    // (no float literal constant pool / RIP-relative loads).
     float gain = (float)GAIN_MULTIPLIER;
     if (channels > 0) {
         __m128 v = _mm_cvtsi32_ss(_mm_setzero_ps(), channels);
         v = _mm_rsqrt_ss(v);
         gain *= _mm_cvtss_f32(v);
     }
-    for (unsigned long i = 0; i < channels * len; i++) out[i] = in[i] * gain;
+    for (unsigned long i = 0; i < channels * len; i++) {
+        float s = in[i] * gain;
+#if GAIN_MULTIPLIER > 2
+        float a = (s < 0.f) ? -s : s;
+        s = s / (1.f + a);
+#endif
+        out[i] = s;
+    }
 }
 
 extern "C" void __cdecl dc_reject(const float* in, float* out, int* hp_mem, int len, int channels, int Fs)
@@ -895,7 +927,14 @@ extern "C" void __cdecl dc_reject(const float* in, float* out, int* hp_mem, int 
         v = _mm_rsqrt_ss(v);
         gain *= _mm_cvtss_f32(v);
     }
-    for (int i = 0; i < channels * len; i++) out[i] = in[i] * gain;
+    for (int i = 0; i < channels * len; i++) {
+        float s = in[i] * gain;
+#if GAIN_MULTIPLIER > 2
+        float a = (s < 0.f) ? -s : s;
+        s = s / (1.f + a);
+#endif
+        out[i] = s;
+    }
 }
 "@
 }
@@ -1559,11 +1598,15 @@ function Invoke-PatchClients {
             }
 
             Write-Log "Applying binary patches with $($Script:Config.AudioGainMultiplier)x gain setting..." -Level Info
-            $patchProc = Start-Process -FilePath $exe -ArgumentList "`"$voiceNodePath`"" -Wait -PassThru -NoNewWindow
+            $patchOut = Join-Path $Script:Config.TempDir "patcher_stdout.txt"
+            $patchErr = Join-Path $Script:Config.TempDir "patcher_stderr.txt"
+            $patchProc = Start-Process -FilePath $exe -ArgumentList "`"$voiceNodePath`"" -Wait -PassThru -NoNewWindow -RedirectStandardOutput $patchOut -RedirectStandardError $patchErr
             if ($patchProc.ExitCode -eq 0) {
                 Write-Log "Successfully patched $clientName with $($Script:Config.AudioGainMultiplier)x gain!" -Level Success
                 $successCount++
             } else {
+                if (Test-Path $patchErr) { $errText = Get-Content $patchErr -Raw -ErrorAction SilentlyContinue; if ($errText) { Write-Log "Patcher stderr: $errText" -Level Error } }
+                if (Test-Path $patchOut) { $outText = Get-Content $patchOut -Raw -ErrorAction SilentlyContinue; if ($outText) { Write-Log "Patcher stdout: $outText" -Level Error } }
                 throw "Patcher exited with code $($patchProc.ExitCode)"
             }
         } catch {
@@ -1611,6 +1654,10 @@ function Start-Patching {
     if ($Restore) { return Restore-FromBackup }
 
     if ($FixAll -or $Script:DoFixAll -or $FixClient) {
+        if ($null -ne $Script:PendingGainForPatchAll) {
+            $Script:Config.AudioGainMultiplier = $Script:PendingGainForPatchAll
+            $Script:PendingGainForPatchAll = $null
+        }
         Show-Settings
         Initialize-Environment
         Write-Log "Scanning for installed Discord clients..." -Level Info
@@ -1667,14 +1714,16 @@ function Start-Patching {
 
         if ($Script:Config.AutoRelaunch -and $uniqueClients.Count -gt 0) {
             Write-Log "Auto-relaunching Discord..." -Level Info
-            Start-Sleep -Seconds 1
+            Start-Sleep -Seconds 3
             $firstClient = $uniqueClients[0]
             $clientInfo = $Script:DiscordClients[$firstClient.Index]
             if ($clientInfo -and $clientInfo.Path -and (Test-Path $clientInfo.Path)) {
                 $updateExe = Join-Path $clientInfo.Path "Update.exe"
                 if (Test-Path $updateExe) {
                     Write-Log "Launching: $($clientInfo.Name.Trim())" -Level Info
-                    Start-Process $updateExe -ArgumentList "--processStart", $clientInfo.Exe
+                    $discordOut = Join-Path $env:TEMP "DiscordPatcher_discord_out.txt"
+                    $discordErr = Join-Path $env:TEMP "DiscordPatcher_discord_err.txt"
+                    Start-Process $updateExe -ArgumentList "--processStart", $clientInfo.Exe -WindowStyle Hidden -RedirectStandardOutput $discordOut -RedirectStandardError $discordErr
                 }
             }
         }
@@ -1704,6 +1753,7 @@ function Start-Patching {
     Write-Log "GUI Settings: Gain = $($Script:Config.AudioGainMultiplier)x, Skip Backup = $($Script:Config.SkipBackup), Auto Relaunch = $($Script:Config.AutoRelaunch)" -Level Info
     if ($guiResult.Action -eq 'PatchAll') {
         $Script:DoFixAll = $true
+        $Script:PendingGainForPatchAll = $guiResult.Multiplier
         return Start-Patching
     }
 
@@ -1738,7 +1788,9 @@ function Start-Patching {
     }
 
     Write-Log "Closing Discord processes..." -Level Info
-    $stopped = Stop-DiscordProcesses $selectedClientInfo.Processes
+    $installPath = $targetClient.Path
+    if (-not $installPath -and (Test-Path $selectedClientInfo.Path)) { $installPath = (Get-Item $selectedClientInfo.Path).FullName }
+    $stopped = Stop-DiscordProcesses -ProcessNames $selectedClientInfo.Processes -InstallPath $installPath
     if (-not $stopped) {
         Write-Log "Warning: Some processes may still be running" -Level Warning
         Start-Sleep -Seconds 2
@@ -1751,20 +1803,23 @@ function Start-Patching {
         Write-Log "=== PATCHING COMPLETE ===" -Level Success
         if ($Script:Config.AutoRelaunch) {
             Write-Log "Auto-relaunching Discord..." -Level Info
-            Start-Sleep -Seconds 1
-            $discordPath = $selectedClientInfo.Path
+            Start-Sleep -Seconds 2
+            $discordPath = $targetClient.Path
+            if (-not $discordPath) { $discordPath = $selectedClientInfo.Path }
             if ($discordPath -and (Test-Path $discordPath)) {
-                $appFolder = Get-ChildItem $discordPath -Directory -Filter "app-*" -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
-                if ($appFolder) {
-                    $exePath = Join-Path $appFolder.FullName $selectedClientInfo.Exe
-                    if (Test-Path $exePath) {
-                        Write-Log "Launching: $exePath" -Level Info
-                        Start-Process $exePath
-                    } else {
-                        $updateExe = Join-Path $discordPath "Update.exe"
-                        if (Test-Path $updateExe) {
-                            Write-Log "Launching via Update.exe..." -Level Info
-                            Start-Process $updateExe -ArgumentList "--processStart", $selectedClientInfo.Exe
+                $updateExe = Join-Path $discordPath "Update.exe"
+                $discordOut = Join-Path $env:TEMP "DiscordPatcher_discord_out.txt"
+                $discordErr = Join-Path $env:TEMP "DiscordPatcher_discord_err.txt"
+                if (Test-Path $updateExe) {
+                    Write-Log "Launching via Update.exe..." -Level Info
+                    Start-Process $updateExe -ArgumentList "--processStart", $selectedClientInfo.Exe -WindowStyle Hidden -RedirectStandardOutput $discordOut -RedirectStandardError $discordErr
+                } else {
+                    $appFolder = Get-ChildItem $discordPath -Directory -Filter "app-*" -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+                    if ($appFolder) {
+                        $exePath = Join-Path $appFolder.FullName $selectedClientInfo.Exe
+                        if (Test-Path $exePath) {
+                            Write-Log "Launching: $exePath" -Level Info
+                            Start-Process $exePath -WindowStyle Hidden -RedirectStandardOutput $discordOut -RedirectStandardError $discordErr
                         }
                     }
                 }
