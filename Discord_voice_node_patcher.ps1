@@ -19,12 +19,13 @@ $Script:SCRIPT_VERSION = "5.0.1"
 
 # region Offsets (PASTE HERE)
 #
-# This patcher uses ONE offsets table.
-# When Discord updates and your offset finder produces new values, paste them here.
+# Replace this entire region with the offset finder output:
+#   Run: python discord_voice_node_offset_finder_v5.py <path\to\discord_voice.node>
+#   Copy the block "COPY BELOW -> Discord_voice_node_patcher.ps1" (including
+#   # region ... OffsetsMeta ... Offsets ... # endregion) and paste here.
 #
-# Tip: keep the MD5/Size in OffsetsMeta updated too. If it doesn't match the downloaded
-# discord_voice.node, the script will stop early with a clear message instead of failing
-# later with a confusing "Binary validation failed".
+# Tip: keep MD5/Size in OffsetsMeta updated. If they don't match the downloaded
+# discord_voice.node, the script stops early instead of failing at validation.
 #
 $Script:OffsetsMeta = @{
     FinderVersion = "discord_voice_node_offset_finder.py v5.0"
