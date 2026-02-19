@@ -2,7 +2,7 @@
 
 **Studio-grade audio for Discord: 48kHz • 400kbps • True Stereo**
 
-![Version](https://img.shields.io/badge/Version-5.0-5865F2?style=flat-square)
+![Version](https://img.shields.io/badge/Version-5.0.1-5865F2?style=flat-square)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?style=flat-square)
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-5391FE?style=flat-square)
 
@@ -26,12 +26,12 @@ Just download and double-click. Always runs the latest version.
 
 #### PowerShell (recommended)
 ```powershell
-$ProgressPreference='SilentlyContinue'; $p = Join-Path $env:TEMP 'dvp.ps1'; Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ProdHallow/Discord-Node-Patcher/main/Discord_voice_node_patcher.ps1' -OutFile $p; powershell -NoProfile -ExecutionPolicy Bypass -File $p
+$ProgressPreference='SilentlyContinue'; $p = Join-Path $env:TEMP 'dvp.ps1'; Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ProdHallow/Discord-Node-Patcher/main/Discord_voice_node_patcher.ps1?v=5.0.1' -OutFile $p; powershell -NoProfile -ExecutionPolicy Bypass -File $p
 ```
 
 #### Command Prompt (cmd.exe)
 ```bat
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; $p = Join-Path $env:TEMP 'dvp.ps1'; Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ProdHallow/Discord-Node-Patcher/main/Discord_voice_node_patcher.ps1' -OutFile $p; & $p"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; $p = Join-Path $env:TEMP 'dvp.ps1'; Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ProdHallow/Discord-Node-Patcher/main/Discord_voice_node_patcher.ps1?v=5.0.1' -OutFile $p; & $p"
 ```
 
 Paste into the matching shell and press Enter.
@@ -138,7 +138,7 @@ notepad "$env:TEMP\DiscordVoicePatcher\patcher.log"
 ### Restore Original
 ```powershell
 # (PowerShell) Run the patcher again, then select "Restore" in the GUI
-$ProgressPreference='SilentlyContinue'; $p = Join-Path $env:TEMP 'dvp.ps1'; Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ProdHallow/Discord-Node-Patcher/main/Discord_voice_node_patcher.ps1' -OutFile $p; powershell -NoProfile -ExecutionPolicy Bypass -File $p
+$ProgressPreference='SilentlyContinue'; $p = Join-Path $env:TEMP 'dvp.ps1'; Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ProdHallow/Discord-Node-Patcher/main/Discord_voice_node_patcher.ps1?v=5.0.1' -OutFile $p; powershell -NoProfile -ExecutionPolicy Bypass -File $p
 # Then select "Restore" in the GUI
 ```
 
