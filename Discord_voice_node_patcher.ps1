@@ -80,7 +80,7 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
 
 # endregion Auto-Elevation
 
-# region Configuration and Offsets
+# region Configuration
 
 $Script:GainExplicitlySet = $PSBoundParameters.ContainsKey('AudioGainMultiplier')
 $Script:Config = @{
@@ -781,9 +781,86 @@ function Initialize-Environment {
     "=== Discord Voice Patcher Log ===`nStarted: $(Get-Date)`nGain: $($Script:Config.AudioGainMultiplier)x`n" | Out-File $Script:Config.LogFile -Force -ErrorAction SilentlyContinue
 }
 
+function Show-CompilerMissingDialog {
+    param(
+        [ValidateSet('MissingCompiler', 'VisualStudioMissingCpp', 'MsvcBuildFailure', 'GppBuildFailure', 'ClangBuildFailure')]
+        [string]$Reason = 'MissingCompiler'
+    )
+
+    $title = "Something is missing - easy fix"
+    $nl = [Environment]::NewLine
+    $body = "This patcher needs a free tool from Microsoft to run. You do not have it (or it is not set up right)." + $nl + $nl +
+        "VS Code and Cursor are just editors. They do not include this tool. You need the installer from the button below." + $nl + $nl
+
+    switch ($Reason) {
+        'VisualStudioMissingCpp' {
+            $body += "You have Visual Studio but the C++ part is not installed. In the installer, click Modify, then tick Desktop development with C++ and install."
+        }
+        'MsvcBuildFailure' {
+            $body += "The build failed. Usually that means the C++ part of Visual Studio is missing or broken. Run the installer and add Desktop development with C++."
+        }
+        'GppBuildFailure' {
+            $body += "Another compiler (MinGW) was used but it failed. Easiest fix: install the Microsoft tool below."
+        }
+        'ClangBuildFailure' {
+            $body += "Another compiler (Clang) was used but it failed. Easiest fix: install the Microsoft tool below."
+        }
+        default {
+            $body += "No compatible build tool was found. Click the button below, download and run the installer, then when it asks what to install, choose Desktop development with C++. After it finishes, run this patcher again."
+        }
+    }
+
+    $body += $nl + $nl + "Then run this patcher again."
+
+    try {
+        Add-Type -AssemblyName System.Windows.Forms, System.Drawing -ErrorAction Stop
+
+        $form = New-Object System.Windows.Forms.Form
+        $form.Text = $title
+        $form.Size = New-Object System.Drawing.Size(500, 300)
+        $form.StartPosition = "CenterScreen"
+        $form.FormBorderStyle = "FixedDialog"
+        $form.MaximizeBox = $false
+        $form.MinimizeBox = $false
+
+        $lbl = New-Object System.Windows.Forms.Label
+        $lbl.Location = New-Object System.Drawing.Point(14, 14)
+        $lbl.Size = New-Object System.Drawing.Size(460, 200)
+        $lbl.AutoSize = $false
+        $lbl.Text = $body
+        $lbl.Font = New-Object System.Drawing.Font("Segoe UI", 9.5)
+        $form.Controls.Add($lbl)
+
+        $btnOpen = New-Object System.Windows.Forms.Button
+        $btnOpen.Text = "Download the tool (free)"
+        $btnOpen.Location = New-Object System.Drawing.Point(14, 222)
+        $btnOpen.Size = New-Object System.Drawing.Size(240, 32)
+        $btnOpen.Font = New-Object System.Drawing.Font("Segoe UI", 9.5)
+        $btnOpen.Add_Click({ Start-Process "https://visualstudio.microsoft.com/visual-cpp-build-tools/" })
+        $form.Controls.Add($btnOpen)
+
+        $btnOk = New-Object System.Windows.Forms.Button
+        $btnOk.Text = "OK"
+        $btnOk.Location = New-Object System.Drawing.Point(268, 222)
+        $btnOk.Size = New-Object System.Drawing.Size(100, 32)
+        $btnOk.Add_Click({ $form.Close() })
+        $form.Controls.Add($btnOk)
+
+        $form.Topmost = $true
+        [void]$form.ShowDialog()
+        $form.Dispose()
+    }
+    catch {
+        try {
+            [System.Windows.Forms.MessageBox]::Show($body, $title, [System.Windows.Forms.MessageBoxButtons]::OK) | Out-Null
+        }
+        catch { }
+    }
+}
+
 function Write-CompilerSetupHelp {
     param(
-        [ValidateSet('MissingCompiler','VisualStudioMissingCpp','MsvcBuildFailure','GppBuildFailure','ClangBuildFailure')]
+        [ValidateSet('MissingCompiler', 'VisualStudioMissingCpp', 'MsvcBuildFailure', 'GppBuildFailure', 'ClangBuildFailure')]
         [string]$Reason = 'MissingCompiler'
     )
 
@@ -798,33 +875,39 @@ function Write-CompilerSetupHelp {
     switch ($Reason) {
         'VisualStudioMissingCpp' {
             Write-Log "Visual Studio was found, but required C++ components are missing." -Level Error
-            Write-Log "Open Visual Studio Installer -> Modify -> Workloads -> Desktop development with C++" -Level Warning
-            Write-Log "Install MSVC v143 x64/x86 build tools and Windows 10/11 SDK" -Level Warning
+            Write-Log "Open Visual Studio Installer, Modify, Workloads, then Desktop development with C++." -Level Warning
+            Write-Log "Install MSVC v143 x64/x86 build tools and Windows 10/11 SDK." -Level Warning
         }
         'MsvcBuildFailure' {
-            Write-Log "MSVC build failed. This is commonly caused by missing Visual Studio C++ components." -Level Error
-            Write-Log "Open Visual Studio Installer -> Modify -> Workloads -> Desktop development with C++" -Level Warning
-            Write-Log "Install MSVC v143 x64/x86 build tools and Windows 10/11 SDK" -Level Warning
+            Write-Log "MSVC build failed. Usually missing Visual Studio C++ components." -Level Error
+            Write-Log "Open Visual Studio Installer, Modify, add Desktop development with C++." -Level Warning
+            Write-Log "Install MSVC v143 x64/x86 build tools and Windows 10/11 SDK." -Level Warning
         }
         'GppBuildFailure' {
-            Write-Log "MinGW g++ build failed. Verify g++ is installed and available in PATH." -Level Error
+            Write-Log "MinGW g++ build failed. Verify g++ is installed and in PATH." -Level Error
         }
         'ClangBuildFailure' {
-            Write-Log "Clang build failed. Verify clang++ is installed and available in PATH." -Level Error
+            Write-Log "Clang build failed. Verify clang++ is installed and in PATH." -Level Error
         }
         default {
             Write-Log "No C++ compiler was found." -Level Error
-            Write-Log "Install ONE of: Visual Studio (Desktop development with C++), MinGW-w64, or LLVM/Clang." -Level Warning
+            Write-Log "Install one of: Visual Studio (Desktop development with C++), MinGW-w64, or LLVM/Clang." -Level Warning
             Write-Log "Visual Studio Code alone is not enough." -Level Warning
         }
     }
 
     Write-Log "After installing tools, rerun the patcher." -Level Info
     Write-Host ""
+
+    try {
+        Show-CompilerMissingDialog -Reason $Reason
+    }
+    catch { }
 }
 
 function Find-Compiler {
     Write-Log "Searching for C++ compiler..." -Level Info
+
     $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
     $vsDetectedPath = $null
     $vsWithCppPath = $null
@@ -842,18 +925,24 @@ function Find-Compiler {
                 $vcvarsMissing = $true
                 Write-Log "Visual Studio C++ workload detected but vcvars64.bat was not found: $vcvars" -Level Warning
             }
-
             $vsDetectedPath = & $vsWhere -latest -products * -property installationPath 2>$null
-        } catch {
+        }
+        catch {
             Write-Log "Could not query Visual Studio installer: $($_.Exception.Message)" -Level Warning
         }
     }
 
     $gpp = Get-Command "g++" -ErrorAction SilentlyContinue
-    if ($gpp) { Write-Log "Found MinGW g++" -Level Success; return @{ Type = 'MinGW'; Path = $gpp.Source } }
+    if ($gpp) {
+        Write-Log "Found MinGW g++" -Level Success
+        return @{ Type = 'MinGW'; Path = $gpp.Source }
+    }
 
     $clang = Get-Command "clang++" -ErrorAction SilentlyContinue
-    if ($clang) { Write-Log "Found Clang" -Level Success; return @{ Type = 'Clang'; Path = $clang.Source } }
+    if ($clang) {
+        Write-Log "Found Clang" -Level Success
+        return @{ Type = 'Clang'; Path = $clang.Source }
+    }
 
     if ($vsDetectedPath -and (-not $vsWithCppPath -or $vcvarsMissing)) {
         Write-Log "Visual Studio detected at: $vsDetectedPath" -Level Warning
@@ -1196,7 +1285,7 @@ public:
         HANDLE file = CreateFileA(modulePath.c_str(), GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
         if (file == INVALID_HANDLE_VALUE) {
             printf("ERROR: Cannot open file (Error: %lu)\n", GetLastError());
-            printf("Make sure Discord is fully closed and you're running as Administrator\n");
+            printf("Make sure Discord is fully closed and you are running as Administrator\n");
             return false;
         }
         LARGE_INTEGER fileSize;
