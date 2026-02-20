@@ -7,6 +7,7 @@
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-5391FE?style=flat-square)
 
 ---
+## ⚠️ YES I AM AWARE THAT 3X AND ABOVE IS BROKEN WILL BE FIXING IT TONIGHT!!!
 
 ## ⬇️ Download & Run
 
