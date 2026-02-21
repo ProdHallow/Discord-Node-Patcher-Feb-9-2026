@@ -7,8 +7,6 @@
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-5391FE?style=flat-square)
 
 ---
-## ⚠️ YES I AM AWARE THAT 3X AND ABOVE IS BROKEN WILL BE FIXING IT TONIGHT!!!
-
 ## ⬇️ Download & Run
 
 ### Option 1: One-Click BAT (Recommended)
@@ -49,6 +47,8 @@ Paste into the matching shell and press Enter.
 | MinGW-w64 | [Download](https://www.mingw-w64.org/downloads/) |
 | LLVM/Clang | [Download](https://releases.llvm.org/download.html) |
 
+If you do not have a compiler, the patcher will show a popup with a **"Download the tool (free)"** button that opens the Microsoft C++ Build Tools page. VS Code and Cursor are editors only — they do not include a compiler.
+
 ---
 
 ## ✨ What It Does
@@ -62,7 +62,18 @@ Paste into the matching shell and press Enter.
 
 Works with: **Discord Stable, Canary, PTB, Development, BetterDiscord, Vencord, Equicord, BetterVencord, Lightcord**
 
-> 🎚️ Gain note: `1x` now uses stereo normalization, so duplicated mono-to-stereo audio does not add the common +3 dB jump.
+> 🎚️ **Gain:** 1x and 2x use stereo-normalized gain (no +3 dB jump on mono-to-stereo). 3x and above use a separate multiplier formula `(channels + Multiplier)` for consistent boost.
+
+---
+
+## 🆕 What's New in v5.0.1
+
+| Feature | Description |
+|---------|-------------|
+| **Hybrid gain (1x/2x vs 3x+)** | 1x and 2x use the original stereo-normalized gain path (GAIN_MULTIPLIER × scale). 3x and above use only the `(channels + Multiplier)` formula — no mixing of the two. |
+| **Missing compiler popup** | If no C++ compiler is found, a friendly popup explains the issue and offers a "Download the tool (free)" button to open the Microsoft C++ Build Tools page. VS Code/Cursor are clearly called out as editors, not compilers. |
+| **ASCII-only script** | All user-facing strings and comments use plain ASCII (no Unicode) to avoid encoding/parse issues on any system. |
+| **Strict path verification** | After generating the amplifier, the script verifies that 3x+ builds contain only the Multiplier formula and 1x/2x builds contain only the GAIN_MULTIPLIER path; cross-contamination is reported as an error. |
 
 ---
 
@@ -104,8 +115,8 @@ Works with: **Discord Stable, Canary, PTB, Development, BetterDiscord, Vencord, 
 
 | Level | Use Case | Safety |
 |:-----:|----------|:------:|
-| 1-2x | Normal use | ✅ Safe |
-| 3-4x | Quiet sources | ⚠️ Caution |
+| 1-2x | Normal use (stereo-normalized) | ✅ Safe |
+| 3-4x | Quiet sources (`channels + Multiplier`) | ⚠️ Caution |
 | 5-10x | Maximum boost | ❌ May distort |
 
 ### File Locations
@@ -122,14 +133,14 @@ Works with: **Discord Stable, Canary, PTB, Development, BetterDiscord, Vencord, 
 
 | Problem | Solution |
 |---------|----------|
-| "No compiler found" | Install Visual Studio with C++ workload |
+| "No compiler found" | Install Visual Studio with C++ workload, or use the patcher's "Download the tool (free)" button in the popup |
 | "I have VS Code but compile still fails" | VS Code is an editor, not a compiler. Install Visual Studio (or Visual Studio Build Tools) with the **Desktop development with C++** workload and Windows SDK |
 | "Discord not found" | Make sure Discord is running |
 | "Access denied" | Script auto-elevates, just accept the prompt |
-| "1x still sounds boosted" | Re-run the latest patcher. `1x` now applies stereo normalization for neutral baseline loudness |
+| "1x still sounds boosted" | Re-run the latest patcher. 1x uses stereo normalization for neutral baseline loudness |
 | Audio distorted | Lower gain to 1-2x |
 | No effect after patch | Restart Discord completely |
-| "Binary validation failed" | Your discord_voice.node doesn't match the Feb 2026 build — wait for a patcher update or restore from backup |
+| "Binary validation failed" | Your discord_voice.node does not match the Feb 2026 build — wait for a patcher update or restore from backup |
 
 ### View Logs
 ```powershell
@@ -147,6 +158,14 @@ $ProgressPreference='SilentlyContinue'; $p = Join-Path $env:TEMP 'dvp.ps1'; $u =
 
 <details>
 <summary><h2>📋 Changelog</h2></summary>
+
+### v5.0.1 — Hybrid Gain + Compiler UX + ASCII
+- 🚀 **NEW:** Hybrid gain — 1x/2x use original stereo-normalized path (GAIN_MULTIPLIER × scale); 3x and above use **only** the `(channels + Multiplier)` formula (Feb 9–style). No mixing; each path is generated in isolation.
+- 🚀 **NEW:** Missing-compiler popup — when no C++ compiler is found, a dialog explains the issue in plain language and offers a "Download the tool (free)" button to open the Microsoft C++ Build Tools page. Clarifies that VS Code and Cursor are editors, not compilers.
+- 🔒 **NEW:** Strict verification — after writing amplifier.cpp, script confirms 3x+ builds contain only Multiplier and `(channels + Multiplier)`; 1x/2x contain only GAIN_MULTIPLIER and scale. Logs ERROR if the wrong path appears.
+- 🧹 **CHANGED:** Script is ASCII-only (no Unicode) in user-facing strings and comments to avoid encoding/parse issues.
+- 🛠️ **FIXED:** Gain coerced to `[int]` so the 1x/2x vs 3x+ branch is always correct regardless of config source (GUI, CLI, JSON).
+- 🧹 **CLEANUP:** Region header aligned (`# region Configuration`); readability improvements in compiler/gain logic.
 
 ### v5.0 (Current) — 400kbps + Full Bitrate Coverage
 - 🚀 **NEW:** Bitrate upgraded from 382kbps to 400kbps across all patch sites
@@ -212,18 +231,25 @@ $ProgressPreference='SilentlyContinue'; $p = Join-Path $env:TEMP 'dvp.ps1'; $u =
 <details>
 <summary><h2>🔬 Technical Details</h2></summary>
 
-### How It Works (v5.0)
+### How It Works (v5.0.1)
 
 1. Downloads compatible voice module files from GitHub backup repository
 2. Closes Discord processes
 3. Backs up existing voice module (for rollback)
 4. Replaces voice module files with compatible versions
 5. **Validates binary** — checks original bytes at 3 code sections to confirm correct build
-6. PowerShell generates C++ patcher code with your settings
+6. PowerShell generates C++ patcher code and **amplifier code** (1x/2x path or 3x+ path only, based on gain)
 7. Compiles to an executable using your C++ compiler
 8. Applies **bounds-checked** binary patches at 18 specific memory offsets
 9. Cleans up temporary compiler artifacts
 10. Optionally relaunches Discord
+
+### Gain Paths (v5.0.1)
+
+| Gain | Formula | Notes |
+|:----:|---------|------|
+| 1x–2x | `out[i] = in[i] * GAIN_MULTIPLIER * scale` | `scale = 1/sqrt(channels)`; stereo-normalized, no +3 dB on mono→stereo |
+| 3x–10x | `out[i] = in[i] * (channels + Multiplier)` | `Multiplier = GUI gain - 2` (e.g. 3x→1, 10x→8). Only this formula is used; no GAIN_MULTIPLIER in 3x+ build. |
 
 ### What Gets Patched
 
@@ -237,27 +263,27 @@ $ProgressPreference='SilentlyContinue'; $p = Join-Path $env:TEMP 'dvp.ps1'; $u =
 | Audio Processing | Replaces filters with gain control |
 | Error Handler | Disabled to prevent patch-related throws |
 
-### Offset Table (Feb 9, 2026 Build)
+### Offset Table (Feb 17, 2026 Build)
 
 ```
-0x53840B  EmulateStereoSuccess1            → 02
-0x538417  EmulateStereoSuccess2            → EB (JMP)
-0x118C41  CreateAudioFrameStereo           → 49 89 C5 90
-0x3A7374  OpusConfigChannels               → 02
-0x0D7E49  MonoDownmixer                    → NOP sled + JMP
-0x53886A  EmulateBitrateModified           → 80 1A 06 (400kbps)
-0x53A691  SetsBitrateBitrateValue          → 80 1A 06 00 00
-0x53A699  SetsBitrateBitwiseOr             → 90 90 90
-0x53D750  DuplicateEmulateBitrateModified  → 80 1A 06 (400kbps)
-0x538573  Emulate48Khz                     → 90 90 90
-0x544680  HighPassFilter                   → mov rax, <HPC VA>; ret
-0x8BD4C0  HighpassCutoffFilter             → injected hp_cutoff()
-0x8BD6A0  DcReject                         → injected dc_reject()
-0x8B9830  DownmixFunc                      → C3 (ret)
-0x3A7610  ConfigIsOk                       → return 1
-0x2C0040  ThrowError                       → C3 (ret)
-0x3A737E  EncoderConfigInit1               → 80 1A 06 00 (400kbps default)
-0x3A6C87  EncoderConfigInit2               → 80 1A 06 00 (400kbps default)
+0x538D2B  EmulateStereoSuccess1            → 02
+0x538D37  EmulateStereoSuccess2             → EB (JMP)
+0x118E11  CreateAudioFrameStereo            → 49 89 C5 90
+0x3A72A4  OpusConfigChannels                → 02
+0x0D8019  MonoDownmixer                     → NOP sled + JMP
+0x53918A  EmulateBitrateModified            → 80 1A 06 (400kbps)
+0x53AFB1  SetsBitrateBitrateValue           → 80 1A 06 00 00
+0x53AFB9  SetsBitrateBitwiseOr              → 90 90 90
+0x53E070  DuplicateEmulateBitrateModified  → 80 1A 06 (400kbps)
+0x538E93  Emulate48Khz                      → 90 90 90
+0x544FA0  HighPassFilter                    → mov rax, <HPC VA>; ret
+0x8BD4C0  HighpassCutoffFilter              → injected hp_cutoff()
+0x8BD6A0  DcReject                          → injected dc_reject()
+0x8B9830  DownmixFunc                       → C3 (ret)
+0x3A7540  ConfigIsOk                        → return 1
+0x2BFF70  ThrowError                        → C3 (ret)
+0x3A72AE  EncoderConfigInit1                → 80 1A 06 00 (400kbps default)
+0x3A6BB7  EncoderConfigInit2                → 80 1A 06 00 (400kbps default)
 ```
 
 ### Safety Features
@@ -269,6 +295,7 @@ $ProgressPreference='SilentlyContinue'; $p = Join-Path $env:TEMP 'dvp.ps1'; $u =
 | Already-patched detection | Re-patching safely for gain changes |
 | Per-write bounds check | Offset overflow from build mismatch |
 | Version-aware auto-update | Prevents downgrade to older offsets |
+| Amplifier path verification | 3x+ must not contain GAIN_MULTIPLIER; 1x/2x must not contain Multiplier define |
 
 </details>
 
