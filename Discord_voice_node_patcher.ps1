@@ -18,14 +18,7 @@ $Script:UPDATE_URL_BASE = "https://raw.githubusercontent.com/ProdHallow/Discord-
 $Script:SCRIPT_VERSION = "5.0.1"
 
 # region Offsets (PASTE HERE)
-#
-# This patcher uses ONE offsets table.
-# When Discord updates and your offset finder produces new values, paste them here.
-#
-# Tip: keep the MD5/Size in OffsetsMeta updated too. If it doesn't match the downloaded
-# discord_voice.node, the script will stop early with a clear message instead of failing
-# later with a confusing "Binary validation failed".
-#
+
 $Script:OffsetsMeta = @{
     FinderVersion = "discord_voice_node_offset_finder.py v5.0"
     Build         = "Feb 17 2026"
@@ -42,6 +35,7 @@ $Script:Offsets = @{
     EmulateBitrateModified            = 0x53918A
     SetsBitrateBitrateValue           = 0x53AFB1
     SetsBitrateBitwiseOr              = 0x53AFB9
+    DuplicateEmulateBitrateModified   = 0x53E070
     Emulate48Khz                      = 0x538E93
     HighPassFilter                    = 0x544FA0
     HighpassCutoffFilter              = 0x8BD4C0
@@ -49,12 +43,10 @@ $Script:Offsets = @{
     DownmixFunc                       = 0x8B9830
     AudioEncoderOpusConfigIsOk        = 0x3A7540
     ThrowError                        = 0x2BFF70
-    DuplicateEmulateBitrateModified   = 0x53E070
     EncoderConfigInit1                = 0x3A72AE
     EncoderConfigInit2                = 0x3A6BB7
+    EncoderConfigInit3                = 0x43FFEE
 }
-
-# endregion Offsets
 
 # region Patch Definitions (Debug Mode)
 
