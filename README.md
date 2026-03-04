@@ -5,7 +5,12 @@
 ![Version](https://img.shields.io/badge/Version-6.0-5865F2?style=flat-square)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?style=flat-square)
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-5391FE?style=flat-square)
+---
+# ⚠️ Can't be heard? Disable your VPN.
 
+VPNs, aggressive firewalls, and antivirus software interfere with Discord's voice packets. Stereo requires higher bandwidth and is especially affected. **This is not a module issue.**
+
+If you must use a VPN, split-tunnel Discord so it bypasses it.
 ---
 > ⚠️ **Debug mode:** Use the **Debug** button in the GUI to show an optional panel where you can enable/disable individual patches (by name) and copy the offset block for use with the offset finder.
 
