@@ -869,7 +869,7 @@ function Show-ConfigurationGUI {
     $form.Controls.Add($debugPanel)
 
     $counterLabel = New-Object Windows.Forms.Label -Property @{
-        Location = "408,8"; Size = "100,20"; TextAlign = [Drawing.ContentAlignment]::MiddleRight
+        Location = "340,8"; Size = "160,20"; TextAlign = [Drawing.ContentAlignment]::MiddleRight
         Font = New-Object Drawing.Font("Segoe UI", 9); ForeColor = [Drawing.Color]::FromArgb(185,187,190)
     }
     $debugPanel.Controls.Add($counterLabel)
